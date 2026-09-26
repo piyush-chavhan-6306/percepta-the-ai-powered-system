@@ -64,6 +64,7 @@ export function CameraFeed({
   const [frozenAt, setFrozenAt] = useState<number>(0);
   const [selectedTriggerId, setSelectedTriggerId] = useState<string>("");
   const [isDeletingTrigger, setIsDeletingTrigger] = useState(false);
+  const [streamError, setStreamError] = useState(false);
 
   // Timeline Seek State
   const [isReplaying, setIsReplaying] = useState(false);
@@ -267,6 +268,10 @@ export function CameraFeed({
 
   const IconComp = modalityBadge.icon;
 
+  useEffect(() => {
+    setStreamError(false);
+  }, [feedUrl]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Top Telemetry Header */}
@@ -463,9 +468,43 @@ export function CameraFeed({
           ref={imageRef}
           src={feedUrl}
           alt={cameraName}
-          onLoad={remeasure}
+          onLoad={() => {
+            setStreamError(false);
+            remeasure();
+          }}
+          onError={() => setStreamError(true)}
           className="max-w-full max-h-full object-contain select-none pointer-events-none"
         />
+
+        {/* Offline / Signal Error Overlay */}
+        {streamError && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm">
+            <div className="p-8 max-w-md text-center flex flex-col items-center gap-3 border border-red-500/30 rounded-2xl bg-black/80 shadow-2xl">
+              <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                <Video className="w-7 h-7 text-red-400" />
+              </div>
+              <h3 className="text-sm font-bold font-mono tracking-widest text-red-400 uppercase">
+                {cameraId} — SIGNAL OFFLINE
+              </h3>
+              <p className="text-xs text-muted-foreground font-mono leading-relaxed">
+                Video perception stream unavailable. Verify that the backend server is running and the camera ingest feed is reachable.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setStreamError(false);
+                  if (imageRef.current) {
+                    imageRef.current.src = `${feedUrl}?t=${Date.now()}`;
+                  }
+                }}
+                className="mt-2 text-xs font-mono border-white/20 hover:border-red-400 text-white"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> RETRY CONNECTION
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Standby Overlay when camera perception is stopped */}
         {!isRunning && (

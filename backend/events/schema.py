@@ -4,7 +4,7 @@ Defines all typed Pydantic event models with validated serialization and deseria
 """
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -39,7 +39,7 @@ class BaseEvent(BaseModel):
     event_type: EventType
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     camera_id: str
-    track_id: Optional[str] = None
+    track_id: Optional[Union[str, int]] = None
     incident_id: Optional[str] = None
     confidence: Optional[float] = None
     source: SourceType = SourceType.VIDEO_FILE

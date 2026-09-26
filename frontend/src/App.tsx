@@ -10,21 +10,11 @@ export default function App() {
       <Routes>
         {/* 1. Public Landing Page */}
         <Route path="/" element={<Landing />} />
-        <Route path="/landing" element={<Landing />} />
 
         {/* 2. Authentication Portal */}
         <Route path="/auth" element={<Auth />} />
-        <Route path="/login" element={<Auth />} />
 
-        {/* 3. Existing Old PERCEPTA C2 Dashboard (Protected by Operator Clearance) */}
-        <Route
-          path="/dashboard/*"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+        {/* 3. Old PERCEPTA C2 Dashboard (Protected by Operator Clearance) */}
         <Route
           path="/dashboard"
           element={
