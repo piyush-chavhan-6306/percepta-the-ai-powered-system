@@ -143,11 +143,27 @@ export function AddCameraModal({ open = true, onClose, onCameraAdded }: AddCamer
         }
       });
 
-      xhr.addEventListener("error", () => reject(new Error("Network error during upload. Please check backend connection.")));
+      xhr.addEventListener("error", () => {
+        console.error("[Upload] XHR network error — possibly CORS, DNS, or backend down", {
+          readyState: xhr.readyState,
+          status: xhr.status,
+          statusText: xhr.statusText,
+        });
+        reject(new Error("Network error during upload. Please check backend connection."));
+      });
       xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out — video may be too large or backend is slow. Try a smaller file.")));
 
       const uploadUrl = API_BASE_URL ? `${API_BASE_URL}/api/cameras/upload` : "/api/cameras/upload";
       xhr.open("POST", uploadUrl);
+      xhr.timeout = 120_000; // 2-minute timeout for large video uploads
+
+      // Attach auth token so backend accepts the request when DEMO_MODE is off
+      const token = localStorage.getItem("percepta_token");
+      if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      }
+
       xhr.send(formData);
     });
   };
