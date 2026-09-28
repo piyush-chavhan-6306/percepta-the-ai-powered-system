@@ -50,20 +50,12 @@ export default function Dashboard() {
       const res = await api.getCameras();
       if (res.cameras && res.cameras.length > 0) {
         setCameras(res.cameras);
-        if (!res.cameras.some((c) => c.camera_id === selectedCameraId)) {
+        if (!selectedCameraId || !res.cameras.some((c) => c.camera_id === selectedCameraId)) {
           setSelectedCameraId(res.cameras[0].camera_id);
         }
       } else {
-        setCameras([
-          {
-            camera_id: "CAM-01",
-            name: "Border Post Alpha",
-            source_type: "video_file",
-            modality: "STANDARD",
-            camera_type: "RGB",
-            is_running: true,
-          },
-        ]);
+        setCameras([]);
+        setSelectedCameraId("");
       }
     } catch (err) {
       console.error("Failed to fetch cameras:", err);

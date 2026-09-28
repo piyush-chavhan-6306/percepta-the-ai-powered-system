@@ -76,16 +76,12 @@ DEMO_CAMERA_ID = "CAM-01"
 
 async def bootstrap_demo_camera(autostart: bool = False) -> None:
     """
-    Register default surveillance cameras in inventory in standby state.
-    Perception starts only when the operator explicitly starts analysis.
+    Register default surveillance cameras only if explicitly enabled.
+    Disabled by default so the system starts with a clean camera registry.
     """
-    manager = get_camera_manager()
-    clip = resolve_video_path(DEFAULT_DEMO_CLIP)
-    if clip is None:
-        logger.warning(
-            f"Demo clip '{DEFAULT_DEMO_CLIP}' not found; skipping demo camera bootstrap. "
-            "Add a camera from the dashboard to begin."
-        )
+    settings = get_settings()
+    if not settings.AUTOSTART_DEMO_CAMERA:
+        logger.info("Demo camera auto-registration disabled. Starting with empty operator registry.")
         return
 
     configs = [
