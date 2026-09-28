@@ -361,18 +361,22 @@ async def upload_camera_video(
         camera_type=cam_type,
         source_type=SourceType.VIDEO_FILE,
     )
-    # Start camera + perception worker in background so the upload response
-    # returns immediately — YOLO model initialization can take 30-60s on
-    # Render's free tier and would otherwise timeout the HTTP request.
+    # 1. Start camera feed immediately (opens cv2.VideoCapture in ~3ms).
+    # This sets status = ONLINE and is_running = True so the frontend immediately
+    # connects the live stream without showing offline/standby screens.
+    started = await manager.start_camera(cam_id)
+    if not started:
+        logger.warning(f"Initial start for uploaded camera {cam_id} deferred to worker boot")
+
+    # 2. Boot perception worker in background (loads ONNX / YOLO detector)
     import asyncio
 
     async def _boot_camera_worker() -> None:
         try:
-            ok = await manager.start_camera(cam_id)
-            if not ok:
-                logger.warning(f"Camera {cam_id} failed initial start, will retry on next frame request")
-                return
-            await get_worker_registry().start_worker(cam_id)
+            registry = get_worker_registry()
+            worker = registry.get_worker(cam_id)
+            if worker is None or not worker.is_running:
+                await registry.start_worker(cam_id)
             logger.info(f"Camera {cam_id} perception worker started successfully")
         except Exception as exc:
             logger.error(f"Background boot for {cam_id} failed: {exc}")

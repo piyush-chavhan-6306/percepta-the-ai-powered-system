@@ -28,7 +28,7 @@ import { API_BASE_URL } from "@/api/client";
 interface AddCameraModalProps {
   open?: boolean;
   onClose: () => void;
-  onCameraAdded?: (cameraId?: string) => void;
+  onCameraAdded?: (cameraId?: string, record?: any) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -126,6 +126,7 @@ export function AddCameraModal({ open = true, onClose, onCameraAdded }: AddCamer
       });
 
       xhr.addEventListener("load", async () => {
+        setUploadProgress(100);
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText);
@@ -144,19 +145,23 @@ export function AddCameraModal({ open = true, onClose, onCameraAdded }: AddCamer
       });
 
       xhr.addEventListener("error", () => {
-        console.error("[Upload] XHR network error — possibly CORS, DNS, or backend down", {
+        console.error("[Upload] XHR network error — possibly connection reset, proxy limit, or backend cold start", {
           readyState: xhr.readyState,
           status: xhr.status,
           statusText: xhr.statusText,
         });
-        reject(new Error("Network error during upload. Please check backend connection."));
+        if (xhr.status === 413) {
+          reject(new Error("Video file exceeds upload size limit (max 2GB). Please upload a smaller video clip."));
+        } else {
+          reject(new Error("Network connection reset during video transfer. Please check backend connection and retry."));
+        }
       });
       xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
-      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out — video may be too large or backend is slow. Try a smaller file.")));
+      xhr.addEventListener("timeout", () => reject(new Error("Upload timed out — video file is very large or network is slow. Try a smaller video clip.")));
 
       const uploadUrl = API_BASE_URL ? `${API_BASE_URL}/api/cameras/upload` : "/api/cameras/upload";
       xhr.open("POST", uploadUrl);
-      xhr.timeout = 120_000; // 2-minute timeout for large video uploads
+      xhr.timeout = 600_000; // 10-minute timeout for large surveillance video uploads
 
       // Attach auth token so backend accepts the request when DEMO_MODE is off
       const token = localStorage.getItem("percepta_token");
@@ -180,7 +185,7 @@ export function AddCameraModal({ open = true, onClose, onCameraAdded }: AddCamer
         // Direct stream upload of ANY file
         const record = await uploadWithProgress(selectedFile, cameraName.trim());
         if (record) {
-          onCameraAdded?.(record.camera_id);
+          onCameraAdded?.(record.camera_id, record);
           handleClose();
         }
       } else {
@@ -381,12 +386,24 @@ export function AddCameraModal({ open = true, onClose, onCameraAdded }: AddCamer
 
               {/* Upload Progress Bar */}
               {isUploading && (
-                <div className="space-y-1.5 p-3 rounded-xl bg-black/40 border border-white/10">
-                  <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                    <span>Streaming to Perception Pipeline...</span>
-                    <span>{uploadProgress}%</span>
+                <div className="space-y-1.5 p-3 rounded-xl bg-black/40 border border-primary/30 shadow-[0_0_15px_rgba(0,229,255,0.1)]">
+                  <div className="flex justify-between items-center text-[10px] font-mono text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                      {uploadProgress >= 100 ? (
+                        <span className="text-primary font-semibold">
+                          Upload Complete • Ingesting Video & Starting AI Pipeline...
+                        </span>
+                      ) : (
+                        <span>Ingesting video stream to edge server...</span>
+                      )}
+                    </span>
+                    <span className="font-bold text-primary">{uploadProgress}%</span>
                   </div>
                   <Progress value={uploadProgress} className="h-1.5" />
+                  <p className="text-[9px] font-mono text-muted-foreground/60">
+                    High-throughput chunked stream ingestion • Zero-copy hardware frame spooling
+                  </p>
                 </div>
               )}
             </TabsContent>

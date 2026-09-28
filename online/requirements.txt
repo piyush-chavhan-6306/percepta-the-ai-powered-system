@@ -25,3 +25,4 @@ passlib[bcrypt]>=1.7.4
 slowapi>=0.1.9
 python-multipart>=0.0.9
 requests>=2.31.0
+onnxruntime>=1.17.0

@@ -32,6 +32,8 @@ models/*.onnx
 models/*_openvino_model/
 **/models/*.pt
 **/models/*.onnx
+!online/models/yolov8n.onnx
+!models/yolov8n.onnx
 
 # ---- Runtime state & databases ----
 border_intelligence.db

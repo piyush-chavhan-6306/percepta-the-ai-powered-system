@@ -94,6 +94,8 @@ export function CameraFeed({
   const [selectedTriggerId, setSelectedTriggerId] = useState<string>("");
   const [isDeletingTrigger, setIsDeletingTrigger] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [streamRetryCount, setStreamRetryCount] = useState(0);
+  const [isConnectingStream, setIsConnectingStream] = useState(true);
 
   // Timeline Seek State
   const [isReplaying, setIsReplaying] = useState(false);
@@ -163,8 +165,32 @@ export function CameraFeed({
     if (isRunning) {
       setSessionNonce(Date.now());
       setStreamError(false);
+      setStreamRetryCount(0);
+      setIsConnectingStream(true);
     }
   }, [isRunning, cameraId, gridLayout]);
+
+  const handleStreamError = () => {
+    if (streamRetryCount < 4) {
+      setStreamRetryCount((prev) => prev + 1);
+      setIsConnectingStream(true);
+      setTimeout(() => {
+        if (imageRef.current) {
+          imageRef.current.src = `${API_BASE_URL}/api/streaming/feed/${cameraId}?t=${Date.now()}`;
+        }
+      }, 1500);
+    } else {
+      setIsConnectingStream(false);
+      setStreamError(true);
+    }
+  };
+
+  const handleStreamLoad = () => {
+    setStreamError(false);
+    setIsConnectingStream(false);
+    setStreamRetryCount(0);
+    remeasure();
+  };
 
   // Fetch explainable Camera Trust telemetry periodically
   useEffect(() => {
@@ -757,17 +783,30 @@ export function CameraFeed({
             className="max-w-full max-h-full object-contain z-10"
           />
         ) : isRunning ? (
-          <img
-            ref={imageRef}
-            src={feedUrl}
-            alt={cameraName}
-            onLoad={() => {
-              setStreamError(false);
-              remeasure();
-            }}
-            onError={() => setStreamError(true)}
-            className="max-w-full max-h-full object-contain select-none pointer-events-none"
-          />
+          <>
+            <img
+              ref={imageRef}
+              src={feedUrl}
+              alt={cameraName}
+              onLoad={handleStreamLoad}
+              onError={handleStreamError}
+              className="max-w-full max-h-full object-contain select-none pointer-events-none"
+            />
+            {/* Connecting HUD Overlay */}
+            {isConnectingStream && !streamError && (
+              <div className="absolute inset-0 z-15 flex flex-col items-center justify-center bg-black/55 backdrop-blur-xs pointer-events-none">
+                <div className="flex flex-col items-center gap-2 p-3.5 rounded-xl bg-black/80 border border-primary/30 shadow-[0_0_20px_rgba(0,229,255,0.2)] animate-in fade-in duration-200">
+                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[11px] font-mono text-primary tracking-wider uppercase font-semibold">
+                    Connecting Live AI Perception Feed...
+                  </span>
+                  <span className="text-[9px] font-mono text-muted-foreground/80">
+                    Initializing YOLOv8 Neural Worker
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <img
             src={`${API_BASE_URL}/api/streaming/snapshot/${cameraId}?t=${sessionNonce}`}

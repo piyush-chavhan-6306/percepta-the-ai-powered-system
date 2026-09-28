@@ -92,7 +92,10 @@ export default function Dashboard() {
   useEffect(() => {
     fetchCameras();
     fetchThreatLevel();
-    const interval = setInterval(fetchThreatLevel, 10000);
+    const interval = setInterval(() => {
+      fetchThreatLevel();
+      fetchCameras();
+    }, 6000);
     return () => clearInterval(interval);
   }, [fetchCameras, fetchThreatLevel]);
 
@@ -616,11 +619,32 @@ export default function Dashboard() {
       {showAddCamera && (
         <AddCameraModal
           onClose={() => setShowAddCamera(false)}
-          onCameraAdded={(newCamId) => {
-            fetchCameras();
+          onCameraAdded={(newCamId, newRecord) => {
             if (newCamId) {
               setSelectedCameraId(newCamId);
+              // Optimistically insert running camera into local state so perception begins instantly
+              setCameras((prev) => {
+                const existing = prev.filter((c) => c.camera_id !== newCamId);
+                const rec = newRecord || {
+                  camera_id: newCamId,
+                  name: `Camera ${newCamId}`,
+                  source_type: "video_file",
+                  modality: "STANDARD",
+                  camera_type: "RGB",
+                  location_label: "Sector Surveillance",
+                  status: "online",
+                  resolution: "1280x720",
+                  native_fps: 30.0,
+                  fps: 30.0,
+                  frames_processed: 0,
+                  dropped_frames: 0,
+                  last_seen: new Date().toISOString(),
+                  is_running: true,
+                };
+                return [{ ...rec, is_running: true, status: "online" }, ...existing];
+              });
             }
+            fetchCameras();
             setShowAddCamera(false);
           }}
         />

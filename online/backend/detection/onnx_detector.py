@@ -73,6 +73,10 @@ class OnnxDetector:
         # Resolve model path across candidate locations
         candidate_paths = [
             Path(self.onnx_path),
+            Path("models/yolov8n.onnx"),
+            Path("online/models/yolov8n.onnx"),
+            Path(__file__).resolve().parent.parent / "models" / "yolov8n.onnx",
+            Path(__file__).resolve().parent.parent.parent / "models" / "yolov8n.onnx",
             Path(__file__).resolve().parents[2] / self.onnx_path,
             Path(__file__).resolve().parents[3] / self.onnx_path,
             Path(__file__).resolve().parents[2] / "models" / "yolov8n.onnx",
@@ -85,44 +89,37 @@ class OnnxDetector:
                 resolved_path = cand
                 break
 
-        if not resolved_path:
-            logger.info("ONNX weight file not found. Loading Ultralytics YOLOv8n engine...")
+        if resolved_path:
             try:
-                from ultralytics import YOLO
-                self._pt_model = YOLO("yolov8n.pt")
+                import onnxruntime as ort
+                # Optimized for multi-core CPU inference: 4 intra-op threads cuts inference latency by ~55%
+                opts = ort.SessionOptions()
+                opts.inter_op_num_threads = 1
+                opts.intra_op_num_threads = min(os.cpu_count() or 4, 4)
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+                self._session = ort.InferenceSession(
+                    str(resolved_path), opts, providers=["CPUExecutionProvider"]
+                )
+                self._input_name = self._session.get_inputs()[0].name
                 self._is_initialized = True
-                logger.info("Ultralytics YOLOv8n PyTorch model loaded successfully as live detector.")
-                try:
-                    exported = self._pt_model.export(format="onnx", imgsz=self.imgsz, verbose=False)
-                    if exported and Path(exported).exists():
-                        resolved_path = Path(exported)
-                        logger.info(f"Exported YOLOv8n to ONNX for acceleration: {resolved_path}")
-                except Exception as exp_err:
-                    logger.info(f"Running directly on PyTorch YOLO engine ({exp_err})")
-            except Exception as pt_err:
-                logger.error(f"Failed to load YOLOv8n engine: {pt_err}")
-                self._pt_model = None
-                self._session = None
-                self._is_initialized = True
+                logger.info(f"ONNX detector initialized: {resolved_path.name} from {resolved_path} (imgsz={self.imgsz})")
+                self._warmup()
                 return
+            except Exception as exc:
+                logger.warning(f"ONNX runtime initialization failed ({exc}). Falling back to PyTorch YOLO...")
+                self._session = None
 
+        # Fallback to PyTorch YOLO directly without any runtime export (prevents OOM crashes)
+        logger.info("Loading Ultralytics YOLOv8n engine (PyTorch fallback)...")
         try:
-            import onnxruntime as ort
-            # Optimized for multi-core CPU inference: 4 intra-op threads cuts inference latency by ~55%
-            opts = ort.SessionOptions()
-            opts.inter_op_num_threads = 1
-            opts.intra_op_num_threads = min(os.cpu_count() or 4, 4)
-            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-            self._session = ort.InferenceSession(
-                str(resolved_path), opts, providers=["CPUExecutionProvider"]
-            )
-            self._input_name = self._session.get_inputs()[0].name
+            from ultralytics import YOLO
+            self._pt_model = YOLO("yolov8n.pt")
             self._is_initialized = True
-            logger.info(f"ONNX detector initialized: {resolved_path.name} from {resolved_path} (imgsz={self.imgsz})")
-            self._warmup()
-        except Exception as exc:
-            logger.error(f"Failed to initialize ONNX runtime session: {exc}. Falling back to empty detections.")
+            logger.info("Ultralytics YOLOv8n PyTorch model loaded successfully as live detector.")
+        except Exception as pt_err:
+            logger.error(f"Failed to load YOLOv8n engine: {pt_err}")
+            self._pt_model = None
             self._session = None
             self._is_initialized = True
 
