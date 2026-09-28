@@ -66,28 +66,63 @@ class OnnxDetector:
         if self._is_initialized:
             return
 
-        import onnxruntime as ort
-
-        path = Path(self.onnx_path)
-        if not path.exists():
-            raise FileNotFoundError(f"ONNX model not found: {path}")
-
+        self._pt_model = None
         import os
-        # Optimized for multi-core CPU inference: 4 intra-op threads cuts inference latency by ~55%
-        # (57 ms down to 26 ms on modern multi-core CPUs).
-        opts = ort.SessionOptions()
-        opts.inter_op_num_threads = 1
-        opts.intra_op_num_threads = min(os.cpu_count() or 4, 4)
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        from pathlib import Path
 
-        self._session = ort.InferenceSession(
-            str(path), opts, providers=["CPUExecutionProvider"]
-        )
-        self._input_name = self._session.get_inputs()[0].name
-        self._is_initialized = True
+        candidate_paths = [
+            Path(self.onnx_path),
+            Path(__file__).resolve().parents[2] / self.onnx_path,
+            Path(__file__).resolve().parents[3] / self.onnx_path,
+            Path(__file__).resolve().parents[2] / "models" / "yolov8n.onnx",
+            Path(__file__).resolve().parents[3] / "models" / "yolov8n.onnx",
+        ]
 
-        logger.info(f"ONNX detector initialized: {path.name} (imgsz={self.imgsz})")
-        self._warmup()
+        resolved_path = None
+        for cand in candidate_paths:
+            if cand.exists() and cand.is_file():
+                resolved_path = cand
+                break
+
+        if not resolved_path:
+            logger.info("ONNX weight file not found. Loading Ultralytics YOLOv8n engine...")
+            try:
+                from ultralytics import YOLO
+                self._pt_model = YOLO("yolov8n.pt")
+                self._is_initialized = True
+                logger.info("Ultralytics YOLOv8n PyTorch model loaded successfully as live detector.")
+                try:
+                    exported = self._pt_model.export(format="onnx", imgsz=self.imgsz, verbose=False)
+                    if exported and Path(exported).exists():
+                        resolved_path = Path(exported)
+                        logger.info(f"Exported YOLOv8n to ONNX for acceleration: {resolved_path}")
+                except Exception as exp_err:
+                    logger.info(f"Running directly on PyTorch YOLO engine ({exp_err})")
+            except Exception as pt_err:
+                logger.error(f"Failed to load YOLOv8n engine: {pt_err}")
+                self._pt_model = None
+                self._session = None
+                self._is_initialized = True
+                return
+
+        try:
+            import onnxruntime as ort
+            opts = ort.SessionOptions()
+            opts.inter_op_num_threads = 1
+            opts.intra_op_num_threads = min(os.cpu_count() or 4, 4)
+            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+            self._session = ort.InferenceSession(
+                str(resolved_path), opts, providers=["CPUExecutionProvider"]
+            )
+            self._input_name = self._session.get_inputs()[0].name
+            self._is_initialized = True
+            logger.info(f"ONNX detector initialized: {resolved_path.name} (imgsz={self.imgsz})")
+            self._warmup()
+        except Exception as exc:
+            logger.warning(f"ONNX runtime session init skipped: {exc}. Will use PyTorch YOLO.")
+            self._session = None
+            self._is_initialized = True
 
     def _warmup(self) -> None:
         """Throwaway inferences to prime ONNX kernels."""
@@ -237,9 +272,55 @@ class OnnxDetector:
         if h == 0 or w == 0:
             return []
 
-        blob = self._preprocess(image)
-        outputs = self._session.run(None, {self._input_name: blob})
-        return self._postprocess(outputs[0], h, w)
+        # 1. High-speed ONNX runtime inference
+        if self._session is not None:
+            try:
+                blob = self._preprocess(image)
+                outputs = self._session.run(None, {self._input_name: blob})
+                return self._postprocess(outputs[0], h, w)
+            except Exception as err:
+                logger.warning(f"ONNX inference failed ({err}), falling back to PyTorch YOLO")
+
+        # 2. Resilient Ultralytics PyTorch YOLO fallback
+        pt_model = getattr(self, "_pt_model", None)
+        if pt_model is not None:
+            try:
+                results = pt_model.predict(
+                    image,
+                    conf=self.conf_threshold,
+                    iou=self.iou_threshold,
+                    imgsz=self.imgsz,
+                    verbose=False,
+                )
+                detections = []
+                if results and len(results) > 0:
+                    r = results[0]
+                    boxes = r.boxes
+                    for box in boxes:
+                        cls_id = int(box.cls[0])
+                        if cls_id not in self.target_class_ids:
+                            continue
+                        conf = float(box.conf[0])
+                        xyxy = box.xyxy[0].tolist()
+                        bx = [round(xyxy[0], 2), round(xyxy[1], 2), round(xyxy[2], 2), round(xyxy[3], 2)]
+                        detections.append({
+                            "class_id": cls_id,
+                            "class_name": self.target_classes.get(cls_id, r.names.get(cls_id, "object")),
+                            "confidence": round(conf, 4),
+                            "bbox": bx,
+                            "norm": [
+                                round(max(0, min(1, bx[0] / w)), 4),
+                                round(max(0, min(1, bx[1] / h)), 4),
+                                round(max(0, min(1, bx[2] / w)), 4),
+                                round(max(0, min(1, bx[3] / h)), 4),
+                            ],
+                        })
+                return detections
+            except Exception as err:
+                logger.error(f"PyTorch YOLO inference error: {err}")
+                return []
+
+        return []
 
 
 # Global registry — one ONNX detector per camera
