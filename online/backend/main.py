@@ -216,6 +216,10 @@ def create_app() -> FastAPI:
     app.include_router(upload_router)
     app.include_router(sync_router)
 
+    @app.get("/health")
+    async def root_health():
+        return {"status": "healthy", "service": "percepta-online-backend"}
+
     @app.get("/")
     async def root():
         return {
