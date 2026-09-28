@@ -361,17 +361,23 @@ async def upload_camera_video(
         camera_type=cam_type,
         source_type=SourceType.VIDEO_FILE,
     )
+    # Start camera + perception worker in background so the upload response
+    # returns immediately — YOLO model initialization can take 30-60s on
+    # Render's free tier and would otherwise timeout the HTTP request.
+    import asyncio
 
-    if not await manager.start_camera(cam_id):
-        error = record.last_error or "unreadable video"
-        await manager.deregister_camera(cam_id)
-        dest.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not decode uploaded video: {error}",
-        )
+    async def _boot_camera_worker() -> None:
+        try:
+            ok = await manager.start_camera(cam_id)
+            if not ok:
+                logger.warning(f"Camera {cam_id} failed initial start, will retry on next frame request")
+                return
+            await get_worker_registry().start_worker(cam_id)
+            logger.info(f"Camera {cam_id} perception worker started successfully")
+        except Exception as exc:
+            logger.error(f"Background boot for {cam_id} failed: {exc}")
 
-    await get_worker_registry().start_worker(cam_id)
+    asyncio.create_task(_boot_camera_worker())
     return CameraResponse(**record.to_dict())
 
 
