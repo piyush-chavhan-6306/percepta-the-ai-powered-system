@@ -160,8 +160,8 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
           {/* Header Shield + Title */}
           <div className="text-center pb-5">
             <div className="relative inline-block mb-3">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto text-primary shadow-lg shadow-primary/20">
-                <Shield className="w-6 h-6" />
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto text-primary shadow-lg shadow-primary/20">
+                <PerceptaLogo size={32} showText={false} />
               </div>
               <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0d1322] shadow-[0_0_6px_#34d399]" />
             </div>
@@ -397,7 +397,7 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
 
       {/* Bottom Legal / Defense Info */}
       <footer className="relative z-10 w-full max-w-6xl mx-auto py-3 text-center text-[10px] font-mono text-muted-foreground/50">
-        PERCEPTA DEFENSE OPERATING SYSTEM • SIH26187 CONFIDENTIAL
+        PERCEPTA DEFENSE OPERATING SYSTEM • CLASSIFIED BORDER SURVEILLANCE
       </footer>
     </div>
   );

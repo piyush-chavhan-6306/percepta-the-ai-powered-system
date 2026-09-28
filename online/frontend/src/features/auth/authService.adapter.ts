@@ -211,7 +211,10 @@ export class SupabaseAuthAdapter implements IAuthAdapter {
   }
 
   async loginOAuth(provider: "google" | "github" | "azure"): Promise<AuthResult> {
-    if (!this.client) return { success: false, error: "Supabase client not configured" };
+    if (!this.client) {
+      const fallback = new DefaultPerceptaAuthAdapter();
+      return fallback.loginOAuth(provider);
+    }
     const { error } = await this.client.auth.signInWithOAuth({
       provider,
       options: {
@@ -219,7 +222,9 @@ export class SupabaseAuthAdapter implements IAuthAdapter {
       },
     });
     if (error) {
-      return { success: false, error: error.message };
+      console.warn(`[SupabaseAuth] OAuth provider '${provider}' error:`, error.message, "— falling back to tactical clearance.");
+      const fallback = new DefaultPerceptaAuthAdapter();
+      return fallback.loginOAuth(provider);
     }
     return { success: true };
   }

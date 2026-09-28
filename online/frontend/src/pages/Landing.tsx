@@ -21,7 +21,7 @@ export const stages = [
     id: "observe",
     index: "01",
     title: "Observe",
-    kicker: "SIH26187 // LEGACY CCTV FLEET RETROFIT",
+    kicker: "TACTICAL DEFENSE // LEGACY CCTV FLEET RETROFIT",
     body: "Ingest fixed border CCTV cameras, RTSP streams, and local recordings into an automated surveillance post — zero costly sensor replacements required.",
     metric: "RTSP · MP4 / WEBM · 30+ FPS EDGE INGESTION",
     side: "left",
@@ -475,7 +475,7 @@ export default function Landing() {
           }}
         >
           <p className="eyebrow">
-            <span className="eyebrow-line" /> SMART INDIA HACKATHON // PS SIH26187
+            <span className="eyebrow-line" /> PERCEPTA DEFENSE // AUTONOMOUS PERIMETER COMMAND
           </p>
           <h1>
             Automated Border Defense.
@@ -587,7 +587,7 @@ export default function Landing() {
       >
         <div className="w-full max-w-5xl text-left space-y-8">
           <p className="eyebrow flex items-center gap-3">
-            <span className="eyebrow-line" /> SMART INDIA HACKATHON // PS SIH26187
+            <span className="eyebrow-line" /> PERCEPTA DEFENSE // AUTONOMOUS PERIMETER COMMAND
           </p>
 
           <h2 className="text-6xl sm:text-7xl lg:text-9xl font-['Barlow_Condensed'] uppercase tracking-tight text-[#e8ebe6] leading-[0.85]">
@@ -604,7 +604,7 @@ export default function Landing() {
 
         {/* Bottom Footer Signature */}
         <div className="footer-signature w-full max-w-5xl flex flex-col sm:flex-row justify-between items-center gap-4 text-[9px] font-mono text-[#667273] border-t border-[rgba(207,220,214,0.16)] pt-6 mt-20">
-          <span>PERCEPTA // BORDER WATCH COMMAND POST (SIH26187)</span>
+          <span>PERCEPTA DEFENSE // BORDER WATCH COMMAND POST</span>
           <span>EDGE NEURAL PERCEPTION · KALMAN BYTETRACK · SHA-256 CUSTODY</span>
           <span>© 2026 MINISTRY OF HOME AFFAIRS / DEFENSE INFRASTRUCTURE</span>
         </div>
