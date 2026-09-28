@@ -59,12 +59,18 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
       }
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setErrorMessage("VALID OPERATOR EMAIL REQUIRED (e.g. officer@percepta.defence or name@gmail.com)");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       if (mode === "signin") {
         const res = await authService.login({
-          emailOrCallsign: email,
+          emailOrCallsign: trimmedEmail,
           password: password,
         });
 
@@ -224,18 +230,18 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="callsign" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                <span>OPERATOR CALLSIGN / USERNAME</span>
-                <span className="text-[10px] text-muted-foreground/60 font-mono">SECTOR ALPHA</span>
+              <label htmlFor="email" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                <span>OFFICER / OPERATOR EMAIL</span>
+                <span className="text-[10px] text-muted-foreground/60 font-mono">ENCRYPTED ID</span>
               </label>
               <div className="relative">
                 <input
-                  id="callsign"
-                  type="text"
+                  id="email"
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full h-10 bg-black/60 border border-white/10 focus:border-primary rounded-lg text-xs font-mono pl-9 pr-3 text-white transition-all outline-none"
-                  placeholder="operator"
+                  placeholder="officer@percepta.defence"
                   required
                 />
                 <UserCheck className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />

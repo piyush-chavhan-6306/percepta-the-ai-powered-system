@@ -15,9 +15,8 @@ pytest-asyncio>=0.23.5
 opencv-python-headless>=4.9.0.80
 numpy>=1.26.0
 
-# AI Perception & Tracking
+# AI Perception & Tracking (CPU torch installed via buildCommand)
 ultralytics>=8.1.0
-torch>=2.0.0
 
 # Gateway, Auth & Rate Limiting
 python-jose[cryptography]>=3.3.0
