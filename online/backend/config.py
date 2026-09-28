@@ -4,6 +4,8 @@ Loads environment variables using Pydantic Settings.
 """
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +18,7 @@ class Settings(BaseSettings):
     API_VERSION: str = "0.1.0"
     # Explicit dev origins: the Vite dev server needs credentialed CORS, and
     # "*" is rejected by browsers when allow_credentials is on.
-    CORS_ORIGINS: list[str] = [
+    CORS_ORIGINS: Any = [
         "http://localhost:5000",
         "http://127.0.0.1:5000",
         "http://localhost:5173",
@@ -26,6 +28,22 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @field_validator("CORS_ORIGINS", mode="after")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v_strip = v.strip()
+            if v_strip == "*":
+                return ["*"]
+            if v_strip.startswith("[") and v_strip.endswith("]"):
+                import json
+                try:
+                    return json.loads(v_strip)
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v if isinstance(v, list) else ["*"]
 
     # Gateway & Authentication (Phase 1)
     JWT_SECRET_KEY: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
