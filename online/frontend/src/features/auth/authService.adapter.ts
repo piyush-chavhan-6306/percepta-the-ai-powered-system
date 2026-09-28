@@ -42,6 +42,8 @@ export interface AuthResult {
   success: boolean;
   error?: string;
   session?: AuthSession;
+  requiresVerification?: boolean;
+  message?: string;
 }
 
 export interface IAuthAdapter {
@@ -204,7 +206,12 @@ export class SupabaseAuthAdapter implements IAuthAdapter {
         localStorage.setItem(AUTH_FLAG_KEY, "true");
         return { success: true, session };
       }
-      return { success: true };
+      // If Supabase requires email verification, session is null
+      return {
+        success: true,
+        requiresVerification: true,
+        message: "VERIFICATION REQUIRED // Please check your inbox and verify your email before logging in.",
+      };
     } catch (err: any) {
       return { success: false, error: err?.message || "REGISTRATION ERROR" };
     }

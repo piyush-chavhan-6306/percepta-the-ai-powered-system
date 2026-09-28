@@ -43,6 +43,16 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [recoverySent, setRecoverySent] = useState(false);
 
+  React.useEffect(() => {
+    // Detect if operator returned directly from Supabase email verification link
+    authService.getCurrentSession().then((session) => {
+      if (session && session.access_token) {
+        setSuccessMessage("EMAIL VERIFIED // ACCESS GRANTED TO COMMAND POST");
+        setTimeout(() => navigate(returnTo), 600);
+      }
+    });
+  }, [navigate, returnTo]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -80,17 +90,26 @@ export default function Auth({ redirectAfterAuth = "/dashboard" }: AuthProps) {
             navigate(returnTo);
           }, 350);
         } else {
-          setErrorMessage(res.error || "ACCESS DENIED // INVALID CLEARANCE CREDENTIALS");
+          let err = res.error || "ACCESS DENIED // INVALID CLEARANCE CREDENTIALS";
+          if (err.toLowerCase().includes("not confirmed")) {
+            err = "EMAIL NOT VERIFIED // Please click the confirmation link sent to your inbox before logging in.";
+          }
+          setErrorMessage(err);
         }
       } else {
         const res = await authService.register({
-          emailOrCallsign: email,
+          emailOrCallsign: trimmedEmail,
           password: password,
         });
 
         if (res.success) {
-          setSuccessMessage("OPERATOR CLEARANCE REGISTERED // LOGGING IN...");
-          setTimeout(() => navigate(returnTo), 600);
+          if (res.requiresVerification) {
+            setSuccessMessage("VERIFICATION EMAIL DISPATCHED // Check your inbox and click the confirmation link to activate your account. You cannot log in until verified.");
+            setMode("signin");
+          } else {
+            setSuccessMessage("OPERATOR CLEARANCE REGISTERED // LOGGING IN...");
+            setTimeout(() => navigate(returnTo), 600);
+          }
         } else {
           setErrorMessage(res.error || "CLEARANCE REGISTRATION REJECTED");
         }
