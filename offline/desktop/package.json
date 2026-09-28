@@ -1,0 +1,57 @@
+{
+  "name": "percepta-defence",
+  "productName": "PERCEPTA Defence",
+  "version": "1.0.0",
+  "description": "PERCEPTA Defence — Autonomous AI Border Surveillance & Tactical Intelligence C2",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "author": "PERCEPTA Defence Systems",
+  "license": "Proprietary",
+  "build": {
+    "npmRebuild": false,
+    "electronVersion": "44.4.5",
+    "appId": "com.percepta.defence.c2",
+    "productName": "PERCEPTA Defence",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../frontend/dist",
+        "to": "dist"
+      },
+      {
+        "from": "../../models",
+        "to": "models"
+      },
+      {
+        "from": "../../storage/virat_cctv.mp4",
+        "to": "videos/virat_cctv.mp4"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PERCEPTA Defence",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.4.5"
+  }
+}

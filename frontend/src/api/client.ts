@@ -15,6 +15,7 @@ import type {
   GroundedIntelligenceResponse,
   HeatmapResponse,
   IncidentDossier,
+  IncidentReplayData,
   IncidentSummary,
   IncidentTimelineResponse,
   IntegrityAuditReport,
@@ -44,8 +45,19 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    let userId = "usr_operator";
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("percepta_c2_session");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.user?.id) userId = parsed.user.id;
+        }
+      } catch (_) {}
+    }
     const headers = {
       "Content-Type": "application/json",
+      "X-User-Id": userId,
       ...(options.headers || {}),
     };
 
@@ -190,6 +202,18 @@ class ApiClient {
     return this.request<CameraDiagnostics>(`/api/cameras/${cameraId}/diagnostics`);
   }
 
+  getCameraTrust(cameraId: string) {
+    return this.request<{
+      camera_id: string;
+      trust_score: number;
+      trust_level: string;
+      is_trusted: boolean;
+      summary: string;
+      factors: Array<{ factor: string; score: number; metric: string; status: string }>;
+      timestamp: string;
+    }>(`/api/cameras/${cameraId}/trust`);
+  }
+
   getCameraHeatmap(cameraId: string) {
     return this.request<HeatmapResponse>(`/api/cameras/${cameraId}/heatmap`);
   }
@@ -210,20 +234,48 @@ class ApiClient {
     });
   }
 
-  getIncidents(params?: { camera_id?: string; limit?: number }) {
+  getIncidents(params?: { camera_id?: string; limit?: number; status?: string; severity?: string; raw?: boolean }) {
     const q = new URLSearchParams();
     if (params?.camera_id) q.set("camera_id", params.camera_id);
     if (params?.limit) q.set("limit", params.limit.toString());
+    if (params?.status) q.set("status", params.status);
+    if (params?.severity) q.set("severity", params.severity);
+    if (params?.raw) q.set("raw", "true");
     const queryStr = q.toString() ? `?${q.toString()}` : "";
-    return this.request<{ count: number; incidents: IncidentSummary[] }>(`/api/incidents${queryStr}`);
+    return this.request<{ count: number; capacity?: number; incidents: IncidentSummary[] }>(`/api/incidents${queryStr}`);
+  }
+
+  getRawIncidents(params?: { limit?: number; severity?: string }) {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", params.limit.toString());
+    if (params?.severity) q.set("severity", params.severity);
+    const queryStr = q.toString() ? `?${q.toString()}` : "";
+    return this.request<{ count: number; capacity?: number; incidents: IncidentSummary[] }>(`/api/incidents/raw${queryStr}`);
+  }
+
+  getIncidentsActive(params?: { camera_id?: string }) {
+    const q = new URLSearchParams();
+    if (params?.camera_id) q.set("camera_id", params.camera_id);
+    const queryStr = q.toString() ? `?${q.toString()}` : "";
+    return this.request<{ count: number; capacity?: number; incidents: IncidentSummary[] }>(`/api/incidents/active${queryStr}`);
   }
 
   getIncidentTimeline(incidentId: string) {
     return this.request<IncidentTimelineResponse>(`/api/incidents/${incidentId}`);
   }
 
+  getIncidentReplay(incidentId: string) {
+    return this.request<IncidentReplayData>(`/api/incidents/${incidentId}/replay`);
+  }
+
   getIncidentDossier(incidentId: string) {
     return this.request<IncidentDossier>(`/api/incidents/${incidentId}/dossier`);
+  }
+
+  acknowledgeIncident(incidentId: string) {
+    return this.request<{ incident_id: string; status: string }>(`/api/incidents/${incidentId}/acknowledge`, {
+      method: "POST",
+    });
   }
 
   getIncidentNotes(incidentId: string) {
@@ -378,6 +430,37 @@ class ApiClient {
     return this.request<GroundedIntelligenceResponse>("/api/intelligence/query", {
       method: "POST",
       body: JSON.stringify({ query, camera_id: cameraId || null }),
+    });
+  }
+
+  // === User Identity & Onboarding ===
+  getUserProfile() {
+    return this.request<{ success: boolean; profile: any; workspace_path: string }>("/api/user/profile");
+  }
+
+  updateUserProfile(data: Record<string, any>) {
+    return this.request<{ success: boolean; profile: any; workspace_path: string }>("/api/user/profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  completeOnboarding() {
+    return this.request<{ success: boolean; onboarding_completed: boolean }>("/api/user/onboarding/complete", {
+      method: "POST",
+    });
+  }
+
+  resetOnboarding() {
+    return this.request<{ success: boolean; onboarding_completed: boolean }>("/api/user/onboarding/reset", {
+      method: "POST",
+    });
+  }
+
+  syncSupabase(data: { supabase_id: string; email: string; name?: string; access_token?: string }) {
+    return this.request<any>("/api/user/sync-supabase", {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 

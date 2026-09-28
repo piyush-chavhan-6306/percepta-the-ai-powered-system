@@ -1,28 +1,39 @@
 # ---- Python ----
 venv/
+**/venv/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+**/.pytest_cache/
 graphify-out/
 
 # ---- Node / frontend ----
 node_modules/
+**/node_modules/
+dist/
+**/dist/
 frontend/dist/
 frontend/node_modules/
+online/frontend/dist/
+online/frontend/node_modules/
 
-# ---- Datasets (~10.5 GB — never commit) ----
+# ---- Datasets & Large binaries ----
 VIRAT/
 VisDrone2019-MOT-val/
 moth17/
 datasets/
+**/datasets/
 
 # ---- Model weights (binary, fetched separately) ----
 models/*.pt
 models/*.onnx
 models/*_openvino_model/
+**/models/*.pt
+**/models/*.onnx
 
-# ---- Runtime state ----
+# ---- Runtime state & databases ----
 border_intelligence.db
 border_intelligence.db-shm
 border_intelligence.db-wal
@@ -30,14 +41,25 @@ border_intelligence.db-wal
 *.db-shm
 *.db-wal
 storage/
+**/storage/
 logs/
+**/logs/
 *.log
 
-# ---- Secrets ----
+# ---- Secrets & Environment Variables ----
 .env
+**/.env
+.env.local
+.env.*.local
 
 # ---- Editor / OS ----
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+build/
+scratch/
+*.spec
+*.exe
+dist-installer/
+**/dist-installer/

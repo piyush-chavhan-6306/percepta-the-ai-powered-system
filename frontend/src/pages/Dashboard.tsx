@@ -12,10 +12,9 @@ import {
   ChevronLeft,
   RefreshCw,
   Radio,
-  Eye,
-  EyeOff,
   Trash2,
   User,
+  Compass,
 } from "lucide-react";
 import { CameraFeed } from "@/components/CameraFeed";
 import { AlertPanel } from "@/components/AlertPanel";
@@ -26,6 +25,8 @@ import { AddCameraModal } from "@/components/AddCameraModal";
 import { ThreatGauge } from "@/components/ThreatGauge";
 import { PremiumBackground } from "@/components/PremiumBackground";
 import { StatusBar } from "@/components/StatusBar";
+import { OfficerProfileModal } from "@/components/OfficerProfileModal";
+import { OnboardingTour } from "@/components/OnboardingTour";
 import { api } from "@/api/client";
 import type { AlertItem, CameraRecord } from "@/types/surveillance";
 
@@ -33,6 +34,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [cameras, setCameras] = useState<CameraRecord[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>("CAM-01");
+  const [gridLayout, setGridLayout] = useState<"1x1" | "2x2" | "3x3">("1x1");
+  const [showProfile, setShowProfile] = useState<boolean>(false);
+  const [showTour, setShowTour] = useState<boolean>(false);
+  const [activeUserId, setActiveUserId] = useState<string>("usr_operator");
   const [threatData, setThreatData] = useState<{ score: number; level: string }>({
     score: 0,
     level: "NORMAL",
@@ -41,7 +46,23 @@ export default function Dashboard() {
   const [selectedAlertTime, setSelectedAlertTime] = useState<string | number | null>(null);
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showGrid, setShowGrid] = useState(true);
+
+  // Per-User Onboarding Tour Verification
+  useEffect(() => {
+    api
+      .getUserProfile()
+      .then((res) => {
+        if (res?.profile) {
+          setActiveUserId(res.profile.id);
+          if (res.profile.onboarding_completed === false) {
+            setShowTour(true);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to check onboarding status:", err);
+      });
+  }, []);
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -59,6 +80,7 @@ export default function Dashboard() {
             name: "Border Post Alpha",
             source_type: "video_file",
             modality: "STANDARD",
+            camera_type: "RGB",
             is_running: true,
           },
         ]);
@@ -111,13 +133,14 @@ export default function Dashboard() {
     }
   };
 
-  const handleToggleRun = async () => {
-    if (!activeCamera) return;
+  const handleToggleRunCamera = async (camId: string) => {
+    const target = cameras.find((c) => c.camera_id === camId);
+    if (!target) return;
     try {
-      if (activeCamera.is_running) {
-        await api.stopCamera(activeCamera.camera_id);
+      if (target.is_running) {
+        await api.stopCamera(target.camera_id);
       } else {
-        await api.startCamera(activeCamera.camera_id);
+        await api.startCamera(target.camera_id);
       }
       await fetchCameras();
     } catch (err) {
@@ -147,8 +170,8 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-primary/30 relative overflow-hidden">
-      {/* Animated background */}
-      {showGrid && <PremiumBackground />}
+      {/* Animated background permanently visible */}
+      <PremiumBackground />
 
       {/* ═══ HEADER — Premium Glass ═══ */}
       <header className="sticky top-0 z-40 relative">
@@ -205,18 +228,6 @@ export default function Dashboard() {
             {/* Right: Actions */}
             <div className="flex items-center gap-2.5">
               <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowGrid(!showGrid)}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title={showGrid ? "Hide background" : "Show background"}
-              >
-                {showGrid ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </Button>
-
-              <div className="h-5 w-px bg-white/10" />
-
-              <Button
                 size="sm"
                 onClick={() => setShowAddCamera(true)}
                 className="h-9 bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-xs flex items-center gap-1.5 shadow-lg shadow-primary/20 border-0"
@@ -240,19 +251,31 @@ export default function Dashboard() {
 
               <div className="h-5 w-px bg-white/10 hidden sm:block" />
 
-              {/* Active Operator Clearance */}
+              {/* Active Operator Dossier */}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate("/auth?redirect=/dashboard")}
-                className="text-xs font-mono flex items-center gap-1.5 text-muted-foreground hover:text-primary h-8 px-2.5 bg-white/[0.03] border border-white/5"
-                title="Active Operator Session (Click to switch / re-authenticate)"
+                onClick={() => setShowProfile(true)}
+                className="text-xs font-mono flex items-center gap-1.5 text-muted-foreground hover:text-primary h-8 px-2.5 bg-white/[0.03] border border-white/5 cursor-pointer relative z-30"
+                title="Operator Dossier & Clearance Profile"
               >
                 <User className="w-3.5 h-3.5 text-primary" />
-                <span className="hidden md:inline text-[11px]">OFFICER ALPHA</span>
+                <span className="hidden md:inline text-[11px]">OFFICER DOSSIER</span>
                 <Badge variant="outline" className="text-[8px] px-1 py-0 border-primary/40 text-primary font-mono ml-0.5">
                   DEFCON-2
                 </Badge>
+              </Button>
+
+              {/* System Orientation Tour */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTour(true)}
+                className="text-xs font-mono flex items-center gap-1.5 text-muted-foreground hover:text-emerald-400 h-8 px-2.5 bg-white/[0.03] border border-white/5 cursor-pointer relative z-30"
+                title="Take System Orientation Tour"
+              >
+                <Compass className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden lg:inline text-[11px]">TOUR</span>
               </Button>
             </div>
           </div>
@@ -265,16 +288,19 @@ export default function Dashboard() {
         <div className="xl:col-span-8 flex flex-col gap-4">
           {/* Camera Selector Bar */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none px-1">
-            {cameras.map((cam, idx) => {
+            {cameras.map((cam) => {
               const isSelected = cam.camera_id === selectedCameraId;
-              const mod = (cam.modality || "STANDARD").toUpperCase();
+              const typeStr = (cam.camera_type || (cam.modality === "IR_NIGHT" ? "IR" : cam.modality === "THERMAL" ? "THERMAL" : "RGB")).toUpperCase();
+              const isIR = typeStr === "IR" || cam.modality === "IR_NIGHT";
+              const isThermal = typeStr === "THERMAL" || cam.modality === "THERMAL";
+
               return (
                 <div key={cam.camera_id} className="relative flex items-center">
                   <PremiumCard
                     tilt={6}
                     lift={isSelected ? 1.04 : 1.01}
                     glare={isSelected}
-                    glowColor="rgba(0, 229, 255, 0.15)"
+                    glowColor={isThermal ? "rgba(244, 63, 94, 0.2)" : isIR ? "rgba(34, 197, 94, 0.2)" : "rgba(0, 229, 255, 0.15)"}
                     depth={isSelected ? 3 : 1}
                   >
                     <div className="flex items-center">
@@ -283,7 +309,7 @@ export default function Dashboard() {
                           setSelectedCameraId(cam.camera_id);
                           setSelectedAlertTime(null);
                         }}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-mono border-0 flex items-center gap-2.5 transition-all duration-300 shrink-0 relative ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-mono border-0 flex items-center gap-2.5 transition-all duration-300 shrink-0 relative ${
                           isSelected
                             ? "bg-primary/15 text-foreground"
                             : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
@@ -299,14 +325,43 @@ export default function Dashboard() {
                               : "none",
                           }}
                         />
+
+                        {/* Visual indicator by Camera Type */}
+                        <div
+                          className={`p-1 rounded flex items-center justify-center transition-all ${
+                            isThermal
+                              ? "border border-dashed border-rose-500/70 bg-rose-500/10 text-rose-400"
+                              : isIR
+                              ? "border border-dashed border-emerald-500/70 bg-emerald-500/10 text-emerald-400"
+                              : "border border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
+                          }`}
+                          title={`Sensor Modality: ${isThermal ? "Thermal Radiometry" : isIR ? "IR Night Vision" : "Optical RGB"}`}
+                        >
+                          {isThermal ? (
+                            <Flame className="w-3 h-3 text-rose-400" />
+                          ) : isIR ? (
+                            <Moon className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Video className="w-3 h-3 text-cyan-400" />
+                          )}
+                        </div>
+
                         <div className="text-left">
                           <div className="font-bold flex items-center gap-1.5">
                             <span>{cam.camera_id}</span>
-                            {mod === "IR_NIGHT" && <Moon className="w-3 h-3 text-emerald-400" />}
-                            {mod === "THERMAL" && <Flame className="w-3 h-3 text-orange-400" />}
-                            {mod === "STANDARD" && <Video className="w-3 h-3 text-cyan-400" />}
+                            <span
+                              className={`text-[8px] font-mono px-1 py-0.2 rounded border ${
+                                isThermal
+                                  ? "border-dashed border-rose-500/60 text-rose-400 bg-rose-500/10"
+                                  : isIR
+                                  ? "border-dashed border-emerald-500/60 text-emerald-400 bg-emerald-500/10"
+                                  : "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
+                              }`}
+                            >
+                              {isThermal ? "THERMAL" : isIR ? "IR" : "RGB"}
+                            </span>
                           </div>
-                          <div className="text-[10px] text-muted-foreground/70 truncate max-w-[140px]">
+                          <div className="text-[10px] text-muted-foreground/70 truncate max-w-[130px]">
                             {cam.name}
                           </div>
                         </div>
@@ -341,49 +396,152 @@ export default function Dashboard() {
             })}
           </div>
 
-          {/* Primary Camera Feed — Premium Frame */}
-          <PremiumCard tilt={3} glare={false} depth={3}>
-            <div className="h-[520px] w-full relative">
-              {/* Corner brackets — premium frame effect */}
-              <div className="absolute top-2 left-2 w-5 h-5 border-t-2 border-l-2 border-primary/40 rounded-tl-lg z-20 pointer-events-none" />
-              <div className="absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-primary/40 rounded-tr-lg z-20 pointer-events-none" />
-              <div className="absolute bottom-2 left-2 w-5 h-5 border-b-2 border-l-2 border-primary/40 rounded-bl-lg z-20 pointer-events-none" />
-              <div className="absolute bottom-2 right-2 w-5 h-5 border-b-2 border-r-2 border-primary/40 rounded-br-lg z-20 pointer-events-none" />
+          {/* Camera Feed Area — Dynamic Grid Layout (1x1, 2x2, 3x3) */}
+          <PremiumCard tilt={gridLayout === "1x1" ? 2 : 0} glare={false} depth={3}>
+            {gridLayout === "1x1" ? (
+              <div className="h-[530px] w-full relative">
+                {/* Corner brackets */}
+                <div className="absolute top-2 left-2 w-5 h-5 border-t-2 border-l-2 border-primary/40 rounded-tl-lg z-20 pointer-events-none" />
+                <div className="absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-primary/40 rounded-tr-lg z-20 pointer-events-none" />
+                <div className="absolute bottom-2 left-2 w-5 h-5 border-b-2 border-l-2 border-primary/40 rounded-bl-lg z-20 pointer-events-none" />
+                <div className="absolute bottom-2 right-2 w-5 h-5 border-b-2 border-r-2 border-primary/40 rounded-br-lg z-20 pointer-events-none" />
 
-              {activeCamera ? (
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={selectedCameraId}
-                    initial={{ opacity: 0.8, scale: 0.998 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0.8, scale: 0.998 }}
-                    transition={{ duration: 0.3 }}
-                    className="h-full"
-                  >
-                    <CameraFeed
-                      cameraId={activeCamera.camera_id}
-                      cameraName={activeCamera.name}
-                      modality={activeCamera.modality || "STANDARD"}
-                      selectedAlertTime={selectedAlertTime}
-                      isRunning={activeCamera.is_running}
-                      onToggleRun={handleToggleRun}
-                      onExitSeek={handleExitSeek}
-                      onZoneCreated={fetchCameras}
-                    />
-                  </motion.div>
-                </AnimatePresence>
-              ) : (
-                <div className="h-full flex items-center justify-center bg-black/40 rounded-xl">
-                  <div className="text-center">
-                    <Radio className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm font-mono text-muted-foreground">No active camera stream</p>
-                    <p className="text-[10px] font-mono text-muted-foreground/50 mt-1">
-                      Add a camera feed to begin surveillance
-                    </p>
+                {activeCamera ? (
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={selectedCameraId}
+                      initial={{ opacity: 0.85, scale: 0.998 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0.85, scale: 0.998 }}
+                      transition={{ duration: 0.2 }}
+                      className="h-full"
+                    >
+                      <CameraFeed
+                        cameraId={activeCamera.camera_id}
+                        cameraName={activeCamera.name}
+                        modality={activeCamera.modality || "STANDARD"}
+                        selectedAlertTime={selectedAlertTime}
+                        isRunning={activeCamera.is_running}
+                        gridLayout={gridLayout}
+                        onLayoutChange={setGridLayout}
+                        onToggleRun={() => handleToggleRunCamera(activeCamera.camera_id)}
+                        onExitSeek={handleExitSeek}
+                        onZoneCreated={fetchCameras}
+                      />
+                    </motion.div>
+                  </AnimatePresence>
+                ) : (
+                  <div className="h-full flex items-center justify-center bg-black/40 rounded-xl">
+                    <div className="text-center">
+                      <Radio className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                      <p className="text-sm font-mono text-muted-foreground">No active camera stream</p>
+                      <p className="text-[10px] font-mono text-muted-foreground/50 mt-1">
+                        Add a camera feed to begin surveillance
+                      </p>
+                    </div>
                   </div>
+                )}
+              </div>
+            ) : gridLayout === "2x2" ? (
+              <div className="p-3">
+                <div className="grid grid-cols-2 gap-3 min-h-[580px]">
+                  {[0, 1, 2, 3].map((slotIdx) => {
+                    const cam = cameras[slotIdx];
+                    if (cam) {
+                      return (
+                        <div
+                          key={cam.camera_id}
+                          className="h-[290px] relative rounded-xl overflow-hidden border border-white/10 bg-black/60 shadow-lg"
+                        >
+                          <CameraFeed
+                            cameraId={cam.camera_id}
+                            cameraName={cam.name}
+                            modality={cam.modality || "STANDARD"}
+                            selectedAlertTime={cam.camera_id === selectedCameraId ? selectedAlertTime : null}
+                            isRunning={cam.is_running}
+                            gridLayout={gridLayout}
+                            onLayoutChange={setGridLayout}
+                            onToggleRun={() => handleToggleRunCamera(cam.camera_id)}
+                            onExitSeek={handleExitSeek}
+                            onZoneCreated={fetchCameras}
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={`standby-2x2-${slotIdx}`}
+                        className="h-[290px] relative rounded-xl border border-dashed border-white/10 bg-black/30 flex flex-col items-center justify-center text-center p-4"
+                      >
+                        <Radio className="w-7 h-7 text-muted-foreground/25 mb-2 animate-pulse" />
+                        <p className="text-[11px] font-mono font-bold tracking-wider text-muted-foreground/70 uppercase">
+                          SLOT {slotIdx + 1} // SENSOR STANDBY
+                        </p>
+                        <p className="text-[9px] font-mono text-muted-foreground/40 mt-0.5">
+                          Unassigned Sector Channel
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowAddCamera(true)}
+                          className="mt-3 text-[10px] font-mono h-7 border-white/10 hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                        >
+                          <Plus className="w-3 h-3 mr-1" /> CONNECT FEED
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="p-3">
+                <div className="grid grid-cols-3 gap-2.5 min-h-[640px]">
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((slotIdx) => {
+                    const cam = cameras[slotIdx];
+                    if (cam) {
+                      return (
+                        <div
+                          key={cam.camera_id}
+                          className="h-[210px] relative rounded-xl overflow-hidden border border-white/10 bg-black/60 shadow-md"
+                        >
+                          <CameraFeed
+                            cameraId={cam.camera_id}
+                            cameraName={cam.name}
+                            modality={cam.modality || "STANDARD"}
+                            selectedAlertTime={cam.camera_id === selectedCameraId ? selectedAlertTime : null}
+                            isRunning={cam.is_running}
+                            gridLayout={gridLayout}
+                            onLayoutChange={setGridLayout}
+                            onToggleRun={() => handleToggleRunCamera(cam.camera_id)}
+                            onExitSeek={handleExitSeek}
+                            onZoneCreated={fetchCameras}
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={`standby-3x3-${slotIdx}`}
+                        className="h-[210px] relative rounded-xl border border-dashed border-white/10 bg-black/30 flex flex-col items-center justify-center text-center p-2"
+                      >
+                        <Radio className="w-5 h-5 text-muted-foreground/20 mb-1" />
+                        <p className="text-[10px] font-mono font-bold text-muted-foreground/60 uppercase">
+                          CH-0{slotIdx + 1} STANDBY
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowAddCamera(true)}
+                          className="mt-1 text-[9px] font-mono h-6 px-2 text-muted-foreground hover:text-primary"
+                        >
+                          <Plus className="w-2.5 h-2.5 mr-0.5" /> ADD
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </PremiumCard>
 
           {/* AI Copilot — Premium Glass */}
@@ -393,9 +551,10 @@ export default function Dashboard() {
         </div>
 
         {/* RIGHT: Alerts (4 cols) */}
-        <div className="xl:col-span-4 h-[calc(100vh-100px)] sticky top-20 flex flex-col">
-          <PremiumCard tilt={2} glare={true} depth={3} className="h-full flex flex-col">
+        <div className="xl:col-span-4 h-[calc(100vh-100px)] sticky top-20 flex flex-col min-h-0">
+          <PremiumCard tilt={2} glare={true} depth={3} className="h-full flex flex-col min-h-0">
             <AlertPanel
+              selectedCameraId={selectedCameraId}
               onSelectAlert={(alert) => setSelectedAlert(alert)}
               selectedAlertId={selectedAlert?.event_id || selectedAlert?.alert_id}
               onSeekTime={handleSeekTime}
@@ -430,6 +589,23 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {showProfile && (
+        <OfficerProfileModal
+          isOpen={showProfile}
+          onClose={() => setShowProfile(false)}
+          onRetakeTour={() => setShowTour(true)}
+        />
+      )}
+
+      {/* ═══ ONBOARDING TOUR ═══ */}
+      <OnboardingTour
+        isOpen={showTour}
+        userId={activeUserId}
+        onClose={() => setShowTour(false)}
+        onComplete={() => setShowTour(false)}
+      />
     </div>
   );
 }
+

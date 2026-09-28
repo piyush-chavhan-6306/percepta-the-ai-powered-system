@@ -40,16 +40,18 @@
 ┌───────────────────────────────────▼────────────────────────────────────┐
 │                           PERCEPTION PIPELINE                          │
 │                                                                        │
-│   1. YOLOv8n Neural Inference (models/yolov8n.pt / CPU & CUDA auto)    │
+│   1. YOLOv8 Neural Inference (models/yolov8n.onnx / models/yolov8n.pt) │
+│      Wrapped by ObjectDetector (backend/detection/detector.py)         │
 │      Detects: Person, Vehicle, Drone, Animals with confidence scoring  │
 │                                   │                                    │
-│   2. ByteTrack Multi-Object Tracking (backend/tracking/tracker.py)      │
+│   2. ByteTrack Tracking (backend/tracking/bytetrack_wrapper.py)        │
 │      Associates detections across frames, Kalman filter state,         │
 │      computes velocities, trajectories, and cardinal headings          │
 │                                   │                                    │
-│   3. Dynamic Threat & Security Zone Engine (backend/zones/)             │
-│      - Point-in-polygon containment evaluation                         │
-│      - Vector cross-product tripwire crossing detection                │
+│   3. Dynamic Threat & Security Zone Engine                             │
+│      - Geofencing: backend/zones/security_zone.py                      │
+│      - Threat Engine: backend/intelligence/threat_engine.py            │
+│      - Point-in-polygon containment & vector tripwires                 │
 │      - Loitering detection & multi-target approach vectors             │
 │      - Deterministic composite threat score (0-100) & DEFCON level     │
 │                                   │                                    │
@@ -211,10 +213,10 @@ The application follows a strict 3-stage defense operational hierarchy:
 
 ### Real Inference vs. Simulation
 - **Production Pipeline**: Every bounding box, track trajectory, confidence score, and alert is computed in real-time by `backend.tracking.pipeline.TrackingPipeline`.
-  - Frame ingested via `SensorAdapter`.
-  - Passed to `YOLOv8Detector` (`models/yolov8n.pt`) with confidence threshold `0.25` and IoU `0.45`.
-  - Detections fed to `ByteTrackTracker` to assign persistent integer track IDs.
-  - Track centroids evaluated against active `SecurityZone` polygon definitions and `VirtualBoundary` tripwire vectors.
+  - Frame ingested via `SensorAdapter` (e.g. `VideoFileAdapter` in `backend/ingestion/video_adapter.py`).
+  - Passed to `ObjectDetector` (`backend/detection/detector.py`, loading local `models/yolov8n.onnx` or `models/yolov8n.pt`) with confidence threshold `0.25` and IoU `0.45`.
+  - Detections fed to `ByteTrackTracker` (`backend/tracking/bytetrack_wrapper.py`) to assign persistent integer track IDs.
+  - Track centroids evaluated against active `SecurityZone` polygon definitions and `VirtualBoundary` tripwire vectors (`backend/zones/security_zone.py`).
   - Result burned into frame via OpenCV (`backend/tracking/overlay.py`).
   - Streamed to frontend as continuous multipart MJPEG (`image/jpeg`).
 - **Signal Offline Protection**:

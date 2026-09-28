@@ -18,6 +18,7 @@ except Exception:
 
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,11 +32,13 @@ from backend.api.forensics import router as forensics_router
 from backend.api.health import router as health_router
 from backend.api.incidents import router as incidents_router
 from backend.api.intelligence import router as intelligence_router
+from backend.api.pathguard import router as pathguard_router
 from backend.api.sensors import router as sensors_router
 from backend.api.streaming import router as streaming_router
 from backend.api.system import router as system_router
 from backend.api.threat import router as threat_router
 from backend.api.zones import router as zones_router
+from backend.api.users import router as users_router
 from backend.config import get_settings
 from backend.database import close_db, init_db
 from backend.events.schema import SourceType
@@ -163,13 +166,37 @@ def create_app() -> FastAPI:
     app.include_router(alerts_router)
     app.include_router(incidents_router)
     app.include_router(zones_router)
+    app.include_router(pathguard_router)
     app.include_router(export_router)
     app.include_router(sensors_router)
     app.include_router(system_router)
     app.include_router(streaming_router)
+    app.include_router(users_router)
 
-    @app.get("/")
-    async def root():
+    dist_candidates = [
+        Path(settings.PERCEPTA_INSTALL_DIR) / "resources" / "dist",
+        Path(settings.PERCEPTA_INSTALL_DIR) / "frontend" / "dist",
+        Path(settings.PERCEPTA_INSTALL_DIR) / "offline" / "frontend" / "dist",
+        Path("frontend/dist"),
+        Path("offline/frontend/dist"),
+    ]
+    dist_dir = next((d for d in dist_candidates if d.is_dir() and (d / "index.html").is_file()), None)
+
+    if dist_dir:
+        from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import FileResponse
+        assets_dir = dist_dir / "assets"
+        if assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="ui_assets")
+
+        @app.get("/")
+        @app.get("/dashboard")
+        @app.get("/auth")
+        async def serve_ui():
+            return FileResponse(str(dist_dir / "index.html"))
+
+    @app.get("/api")
+    async def api_root():
         return {
             "name": settings.APP_NAME,
             "status": "online",
