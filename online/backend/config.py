@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     STRIDE_COOLDOWN_FRAMES: int = 30
 
     # Live perception
-    AUTOSTART_DEMO_CAMERA: bool = True
+    AUTOSTART_DEMO_CAMERA: bool = False
     MJPEG_JPEG_QUALITY: int = 40
     MAX_MJPEG_CLIENTS: int = 32
 
