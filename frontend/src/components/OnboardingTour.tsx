@@ -42,7 +42,7 @@ interface TourStep {
 
 const TOUR_STEPS: TourStep[] = [
   {
-    title: "1. C2 Navigation & System Header",
+    title: "1. Navigation & System Header",
     badge: "COMMAND & CONTROL",
     icon: Compass,
     description: "The top command bar provides instantaneous visibility into system status, active operator identity, threat counters, and rapid switching between tactical views.",
@@ -226,7 +226,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold tracking-wider text-emerald-400 uppercase">
-                    PERCEPTA DEFENCE C2
+                    PERCEPTA DEFENSE
                   </h3>
                   <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-300">
                     SYSTEM ORIENTATION

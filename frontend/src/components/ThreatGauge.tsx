@@ -21,6 +21,7 @@ function getLevelConfig(level: string) {
         glow: "rgba(239,68,68,0.5)",
         pulse: "rgba(239,68,68,0.08)",
       };
+    case "RESTRICTED":
     case "HIGH":
     case "DEFCON_ORANGE":
     case "ORANGE":

@@ -155,6 +155,62 @@ class CameraListResponse(BaseModel):
     cameras: List[CameraResponse]
 
 
+# Track cameras explicitly deleted by the operator so they never auto-reopen
+_user_deleted_cameras: set[str] = set()
+
+
+async def bootstrap_demo_camera(autostart: bool = False) -> None:
+    """
+    Ensure the default surveillance camera (CAM-01) is registered in inventory on server boot.
+    Respects operator deletions: if CAM-01 was deleted, it is never resurrected.
+    """
+    from backend.events.schema import SourceType
+    from backend.ingestion.video_adapter import VideoFileAdapter
+
+    manager = get_camera_manager()
+    clip = resolve_video_path(DEFAULT_DEMO_CLIP)
+    if clip is None:
+        logger.warning(
+            f"Demo clip '{DEFAULT_DEMO_CLIP}' not found; skipping demo camera bootstrap."
+        )
+        return
+
+    configs = [
+        ("CAM-01", "Border Post Alpha (Optical CCTV)", "Sector 7 Perimeter", "STANDARD"),
+    ]
+
+    for cid, name, loc, mod in configs:
+        if cid in _user_deleted_cameras:
+            continue
+        if manager.get_camera(cid) is not None:
+            continue
+        try:
+            adapter = VideoFileAdapter(
+                camera_id=cid,
+                video_path=clip,
+                loop=True,
+                modality=mod,
+            )
+            manager.register_camera(
+                camera_id=cid,
+                adapter=adapter,
+                name=name,
+                location_label=loc,
+                modality=mod,
+                source_type=SourceType.VIDEO_FILE,
+            )
+            if autostart:
+                if await manager.start_camera(cid):
+                    await get_worker_registry().start_worker(cid)
+                    logger.info(f"Multi-Modal Camera '{cid}' [{mod}] live on {clip}")
+                else:
+                    await manager.deregister_camera(cid)
+            else:
+                logger.info(f"Registered camera '{cid}' in STANDBY mode.")
+        except Exception as err:
+            logger.warning(f"Camera bootstrap failed for {cid}: {err}")
+
+
 @router.get("", response_model=CameraListResponse)
 async def list_cameras() -> CameraListResponse:
     """List all registered surveillance cameras and their operational statuses."""
@@ -214,6 +270,7 @@ async def register_camera(request: RegisterCameraRequest) -> CameraResponse:
 
     manager = get_camera_manager()
     src_type = request.source_type.lower()
+    _user_deleted_cameras.discard(str(request.camera_id).strip())
 
     if manager.get_camera(request.camera_id) is not None:
         raise HTTPException(
@@ -383,16 +440,23 @@ async def upload_camera_video(
         source_type=SourceType.VIDEO_FILE,
     )
 
-    if not await manager.start_camera(cam_id):
-        error = record.last_error or "unreadable video"
-        await manager.deregister_camera(cam_id)
-        dest.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not decode uploaded video: {error}",
-        )
+    started = await manager.start_camera(cam_id)
+    if not started:
+        logger.warning(f"Initial start for uploaded camera {cam_id} deferred to worker boot")
 
-    await get_worker_registry().start_worker(cam_id)
+    import asyncio
+
+    async def _boot_camera_worker() -> None:
+        try:
+            registry = get_worker_registry()
+            worker = registry.get_worker(cam_id)
+            if worker is None or not worker.is_running:
+                await registry.start_worker(cam_id)
+            logger.info(f"Camera {cam_id} perception worker started successfully")
+        except Exception as exc:
+            logger.error(f"Background boot for {cam_id} failed: {exc}")
+
+    asyncio.create_task(_boot_camera_worker())
     return CameraResponse(**record.to_dict())
 
 
@@ -448,6 +512,9 @@ async def deregister_camera(camera_id: str) -> Dict[str, Any]:
     engine = get_incident_engine()
     engine.clear_camera(camera_id)
 
+    # Remember that operator explicitly deleted this camera so it is never auto-reopened
+    _user_deleted_cameras.add(str(camera_id).strip())
+
     success = await manager.deregister_camera(camera_id)
     if not success:
         raise HTTPException(
@@ -461,23 +528,21 @@ async def deregister_camera(camera_id: str) -> Dict[str, Any]:
 async def start_camera(camera_id: str) -> Dict[str, Any]:
     """Open the source and start live perception for a registered camera."""
     manager = get_camera_manager()
-    worker_reg = get_worker_registry()
-
-    # Enforce strictly ONE active camera running perception at a time
-    running_cams = manager.get_running_cameras()
-    for other_id in running_cams:
-        if other_id != camera_id:
-            logger.info(f"Stopping active camera '{other_id}' before starting '{camera_id}'")
-            await worker_reg.stop_worker(other_id)
-            await manager.stop_camera(other_id)
+    record = manager.get_camera(camera_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera '{camera_id}' not found in registry.",
+        )
 
     success = await manager.start_camera(camera_id)
     if not success:
+        err_msg = record.last_error or "Adapter failed to open source"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to start camera '{camera_id}'. Ensure camera is registered.",
+            detail=f"Failed to start camera '{camera_id}': {err_msg}",
         )
-    await worker_reg.start_worker(camera_id)
+    await get_worker_registry().start_worker(camera_id)
     return {"camera_id": camera_id, "status": "started"}
 
 

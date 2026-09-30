@@ -137,23 +137,9 @@ class ANPRProcessor:
         if contrast < 12.0:
             return "LOW_CONTRAST_UNREADABLE", 0.20, False
 
-        # Attempt real OCR if pytesseract is installed and configured
-        try:
-            import pytesseract
-            # Preprocess plate crop: upscale, binarize, and run OCR
-            resized_plate = cv2.resize(gray, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            _, binarized = cv2.threshold(resized_plate, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            config = "-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 --psm 7"
-            raw_ocr = pytesseract.image_to_string(binarized, config=config).strip()
-            clean_text = re.sub(r"[^A-Z0-9]", "", raw_ocr.upper())
-            if clean_text:
-                is_valid = bool(INDIAN_PLATE_REGEX.match(clean_text) or DEFENSE_PLATE_REGEX.match(clean_text))
-                return clean_text, min(0.95, max(0.50, contrast / 50.0)), is_valid
-        except Exception:
-            pass
-
-        # Honest reporting: OCR engine not configured or image resolution insufficient
-        return "UNRESOLVED_LOW_RES", round(min(0.50, contrast / 80.0), 2), False
+        # OCR disabled by user to prevent CPU freezing on demo machine.
+        # The license plate crop image will still be captured for evidence!
+        return "OCR_DISABLED", round(min(0.50, contrast / 80.0), 2), False
 
     def process_vehicle(
         self,

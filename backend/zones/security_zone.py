@@ -38,6 +38,27 @@ class ZoneSeverity(str, Enum):
             return cls.NORMAL
 
 
+def _diff_seconds(t1: Any, t2: Any) -> float:
+    """Safely calculate time difference in seconds between two timestamps (datetime, float, or int)."""
+    if t1 is None or t2 is None:
+        return 0.0
+    if isinstance(t1, (int, float)) and isinstance(t2, (int, float)):
+        return float(t1 - t2)
+    if hasattr(t1, "timestamp") and isinstance(t2, (int, float)):
+        return float(t1.timestamp() - t2)
+    if isinstance(t1, (int, float)) and hasattr(t2, "timestamp"):
+        return float(t1 - t2.timestamp())
+    if hasattr(t1, "timestamp") and hasattr(t2, "timestamp"):
+        return float(t1.timestamp() - t2.timestamp())
+    try:
+        diff = t1 - t2
+        if hasattr(diff, "total_seconds"):
+            return float(diff.total_seconds())
+        return float(diff)
+    except Exception:
+        return 0.0
+
+
 @dataclass
 class SecurityZone:
     """
@@ -52,21 +73,34 @@ class SecurityZone:
     target_classes: Optional[Set[str]] = None  # None means all classes
     loitering_threshold_seconds: Optional[float] = None  # None = no loitering check
     loitering_debounce_seconds: float = 30.0  # Cooldown between repeat loitering alerts
+    camera_id: Optional[str] = None  # If set, this zone applies only to the specific camera
 
     def contains_point(self, point: Tuple[float, float]) -> bool:
         """
         Ray-casting algorithm to test if a 2D point (x, y) is inside the polygon.
+        Supports both pixel space and normalized [0.0, 1.0] coordinate spaces seamlessly.
         """
         if not self.polygon or len(self.polygon) < 3:
             return False
 
+        poly = self.polygon
         x, y = point
-        n = len(self.polygon)
+
+        # Auto-detect coordinate space: normalized [0..1] vs pixel space [0..1280]
+        is_poly_norm = all(0.0 <= pt[0] <= 1.0 and 0.0 <= pt[1] <= 1.0 for pt in poly)
+        is_pt_norm = (x <= 1.0 and y <= 1.0)
+
+        if is_poly_norm and not is_pt_norm:
+            poly = [(pt[0] * 1280.0, pt[1] * 720.0) for pt in poly]
+        elif not is_poly_norm and is_pt_norm:
+            x, y = (x * 1280.0, y * 720.0)
+
+        n = len(poly)
         inside = False
 
-        p1x, p1y = self.polygon[0]
+        p1x, p1y = poly[0]
         for i in range(1, n + 1):
-            p2x, p2y = self.polygon[i % n]
+            p2x, p2y = poly[i % n]
             if y > min(p1y, p2y):
                 if y <= max(p1y, p2y):
                     if x <= max(p1x, p2x):
@@ -96,6 +130,7 @@ class VirtualBoundary:
     debounce_seconds: float = 3.0
     is_active: bool = True
     target_classes: Optional[Set[str]] = None
+    camera_id: Optional[str] = None  # If set, this boundary applies only to the specific camera
 
     def check_crossing(
         self,
@@ -105,21 +140,34 @@ class VirtualBoundary:
         """
         Check if the movement segment (prev_point -> curr_point) crosses this boundary.
         Returns crossing direction ('inbound', 'outbound', 'crossed', 'NORTH', 'SOUTH', etc.) or None.
+        Supports both pixel and normalized coordinates.
         """
         if prev_point is None or curr_point is None:
             return None
 
-        p0_x, p0_y = prev_point
-        p1_x, p1_y = curr_point
-        q0_x, q0_y = self.pt1
-        q1_x, q1_y = self.pt2
+        q0 = self.pt1
+        q1 = self.pt2
+        p0 = prev_point
+        p1 = curr_point
+
+        is_boundary_norm = (0.0 <= q0[0] <= 1.0 and 0.0 <= q0[1] <= 1.0 and 0.0 <= q1[0] <= 1.0 and 0.0 <= q1[1] <= 1.0)
+        is_pts_norm = (curr_point[0] <= 1.0 and curr_point[1] <= 1.0)
+
+        if is_boundary_norm and not is_pts_norm:
+            q0 = (q0[0] * 1280.0, q0[1] * 720.0)
+            q1 = (q1[0] * 1280.0, q1[1] * 720.0)
+        elif not is_boundary_norm and is_pts_norm:
+            p0 = (p0[0] * 1280.0, p0[1] * 720.0)
+            p1 = (p1[0] * 1280.0, p1[1] * 720.0)
+
+        p0_x, p0_y = p0
+        p1_x, p1_y = p1
+        q0_x, q0_y = q0
+        q1_x, q1_y = q1
 
         # Check line segment intersection between (P0 -> P1) and (Q0 -> Q1)
         def _ccw(a: Tuple[float, float], b: Tuple[float, float], c: Tuple[float, float]) -> float:
             return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
-
-        p0, p1 = (p0_x, p0_y), (p1_x, p1_y)
-        q0, q1 = (q0_x, q0_y), (q1_x, q1_y)
 
         # Check orientations
         d1 = _ccw(q0, q1, p0)
@@ -246,6 +294,7 @@ class ZoneMonitor:
                     is_active=zd.get("is_active", True),
                     loitering_threshold_seconds=zd.get("loitering_threshold_seconds"),
                     loitering_debounce_seconds=zd.get("loitering_debounce_seconds", 30.0),
+                    camera_id=zd.get("camera_id"),
                 )
                 self.zones[z.zone_id] = z
             for bd in data.get("boundaries", []):
@@ -258,6 +307,7 @@ class ZoneMonitor:
                     direction=bd.get("direction", "BIDIRECTIONAL"),
                     debounce_seconds=bd.get("debounce_seconds", 3.0),
                     is_active=bd.get("is_active", True),
+                    camera_id=bd.get("camera_id"),
                 )
                 self.boundaries[b.boundary_id] = b
             logger.info(f"Loaded {len(self.zones)} zones and {len(self.boundaries)} boundaries from {fp}")
@@ -283,6 +333,7 @@ class ZoneMonitor:
                         "is_active": z.is_active,
                         "loitering_threshold_seconds": z.loitering_threshold_seconds,
                         "loitering_debounce_seconds": z.loitering_debounce_seconds,
+                        "camera_id": z.camera_id,
                     }
                     for z in self.zones.values()
                 ],
@@ -296,6 +347,7 @@ class ZoneMonitor:
                         "direction": getattr(b, "direction", "BIDIRECTIONAL"),
                         "debounce_seconds": b.debounce_seconds,
                         "is_active": b.is_active,
+                        "camera_id": b.camera_id,
                     }
                     for b in self.boundaries.values()
                 ],
@@ -370,6 +422,8 @@ class ZoneMonitor:
         # Precompute centroids of critical/restricted zones for approach detection
         protected_centroids: List[Tuple[float, float]] = []
         for zone in self.zones.values():
+            if zone.camera_id is not None and zone.camera_id != camera_id:
+                continue
             if zone.is_active and zone.severity in (ZoneSeverity.RESTRICTED, ZoneSeverity.CRITICAL):
                 if zone.polygon and len(zone.polygon) >= 3:
                     cx = sum(p[0] for p in zone.polygon) / len(zone.polygon)
@@ -405,11 +459,13 @@ class ZoneMonitor:
             for z_id, zone in self.zones.items():
                 if not zone.is_active:
                     continue
+                if zone.camera_id is not None and zone.camera_id != camera_id:
+                    continue
                 if zone.target_classes and track.object_class not in zone.target_classes:
                     continue
 
                 is_inside = zone.contains_point(curr_pos) or (
-                    hasattr(track, "bbox") and track.bbox and len(track.bbox) >= 4 and zone.contains_point((track.center_x, float(track.bbox[3])))
+                    hasattr(track, "bounding_box") and track.bounding_box and len(track.bounding_box) >= 4 and zone.contains_point((track.center_x, float(track.bounding_box[3])))
                 )
                 was_inside = self._track_zone_state[t_id].get(z_id, False)
 
@@ -459,7 +515,7 @@ class ZoneMonitor:
                         last_entry_alert = self._zone_entry_last_alert.get(entry_key)
                         _now_ts = track.timestamp
                         if last_entry_alert is not None:
-                            elapsed_entry = (_now_ts - last_entry_alert).total_seconds()
+                            elapsed_entry = _diff_seconds(_now_ts, last_entry_alert)
                             if elapsed_entry < self._zone_entry_cooldown_secs:
                                 # Same target re-entering within cooldown — do NOT open a new alert/incident.
                                 # Just update the existing incident via the engine without emitting an alert.
@@ -523,7 +579,7 @@ class ZoneMonitor:
                     entry_time = self._track_zone_entry_time[t_id].pop(z_id, None)
                     dwell_secs = None
                     if entry_time is not None:
-                        dwell_secs = max(0.0, (track.timestamp - entry_time).total_seconds())
+                        dwell_secs = max(0.0, _diff_seconds(track.timestamp, entry_time))
 
                     self._track_zone_loiter_alert_time[t_id].pop(z_id, None)
                     track.previous_zone = zone.name
@@ -567,7 +623,7 @@ class ZoneMonitor:
                 elif is_inside and was_inside:
                     # DWELLING: Update dwell clock & evaluate Loitering threshold
                     entry_time = self._track_zone_entry_time[t_id].get(z_id, track.timestamp)
-                    dwell_secs = max(0.0, (track.timestamp - entry_time).total_seconds())
+                    dwell_secs = max(0.0, _diff_seconds(track.timestamp, entry_time))
                     track.zone_dwell_seconds = dwell_secs
                     track.current_zone = zone.name
 
@@ -577,7 +633,7 @@ class ZoneMonitor:
                             should_alert = False
                             if last_alert is None:
                                 should_alert = True
-                            elif (track.timestamp - last_alert).total_seconds() >= zone.loitering_debounce_seconds:
+                            elif _diff_seconds(track.timestamp, last_alert) >= zone.loitering_debounce_seconds:
                                 should_alert = True
 
                             if should_alert:
@@ -654,17 +710,24 @@ class ZoneMonitor:
                 for b_id, boundary in self.boundaries.items():
                     if not boundary.is_active:
                         continue
+                    if boundary.camera_id is not None and boundary.camera_id != camera_id:
+                        continue
                     if boundary.target_classes and track.object_class not in boundary.target_classes:
                         continue
 
                     crossing_dir = boundary.check_crossing(prev_pos, curr_pos)
+                    if crossing_dir is None and hasattr(track, "bounding_box") and track.bounding_box and len(track.bounding_box) >= 4:
+                        h_offset = float(track.bounding_box[3]) - curr_pos[1]
+                        bottom_prev = (prev_pos[0], prev_pos[1] + h_offset)
+                        bottom_curr = (curr_pos[0], float(track.bounding_box[3]))
+                        crossing_dir = boundary.check_crossing(bottom_prev, bottom_curr)
                     if crossing_dir is not None:
                         # Debounce check per track and boundary
                         if t_id not in self._track_boundary_alert_time:
                             self._track_boundary_alert_time[t_id] = {}
                         last_alert_time = self._track_boundary_alert_time[t_id].get(b_id)
                         if last_alert_time is not None:
-                            elapsed = (track.timestamp - last_alert_time).total_seconds()
+                            elapsed = _diff_seconds(track.timestamp, last_alert_time)
                             if elapsed < boundary.debounce_seconds:
                                 continue
                         self._track_boundary_alert_time[t_id][b_id] = track.timestamp

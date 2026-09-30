@@ -4,12 +4,14 @@ export interface PerceptaLogoProps {
   className?: string;
   size?: number;
   showText?: boolean;
+  subtitle?: string;
 }
 
 export const PerceptaLogo: React.FC<PerceptaLogoProps> = ({
   className = "",
   size = 28,
   showText = true,
+  subtitle = "DEFENSE",
 }) => {
   return (
     <div className={`flex items-center gap-3 select-none group ${className}`}>
@@ -75,7 +77,7 @@ export const PerceptaLogo: React.FC<PerceptaLogoProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] shadow-[0_0_6px_#00e5ff] animate-pulse" />
           </div>
           <span className="font-mono text-[8px] tracking-[0.25em] text-[#00e5ff]/60 uppercase mt-0.5">
-            DEFENSE C2
+            {subtitle}
           </span>
         </div>
       )}

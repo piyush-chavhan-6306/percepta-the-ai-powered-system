@@ -100,10 +100,11 @@ class FaceAnalyticsProcessor:
         # 1. Check Cascade Classifier if available
         if self.face_cascade is not None and not self.face_cascade.empty():
             gray = cv2.cvtColor(head_crop, cv2.COLOR_BGR2GRAY)
+            # Use strict minNeighbors to avoid false positives and reduce compute time
             faces = self.face_cascade.detectMultiScale(
                 gray,
                 scaleFactor=1.1,
-                minNeighbors=3,
+                minNeighbors=5,
                 minSize=(15, 15),
             )
             if len(faces) > 0:

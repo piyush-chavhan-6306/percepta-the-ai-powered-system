@@ -48,6 +48,7 @@ export interface SecurityZone {
   is_active?: boolean;
   loitering_threshold_seconds?: number;
   loitering_debounce_seconds?: number;
+  camera_id?: string;
 }
 
 export interface VirtualBoundary {
@@ -58,6 +59,7 @@ export interface VirtualBoundary {
   severity: "critical" | "restricted" | "warning" | "monitored" | string;
   direction?: "NORTH" | "SOUTH" | "EAST" | "WEST" | "BIDIRECTIONAL" | string;
   is_active?: boolean;
+  camera_id?: string;
 }
 
 export interface ZonesListResponse {

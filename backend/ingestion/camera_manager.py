@@ -87,12 +87,24 @@ class CameraManager:
         location_label: str = "Sector Border Post",
         modality: str = "STANDARD",
         source_type: Optional[SourceType] = None,
+        camera_type: Optional[str] = None,
+        **kwargs: Any,
     ) -> CameraRecord:
         """Register a new camera adapter and allocate its operational record."""
         clean_id = str(camera_id).strip()
         cam_name = name or f"Camera {clean_id}"
         src = source_type or adapter.source
-        mod = modality or getattr(adapter, "modality", "STANDARD")
+
+        if camera_type:
+            ct = str(camera_type).upper()
+            if ct in ("IR", "IR_NIGHT"):
+                mod = "IR_NIGHT"
+            elif ct == "THERMAL":
+                mod = "THERMAL"
+            else:
+                mod = modality or getattr(adapter, "modality", "STANDARD")
+        else:
+            mod = modality or getattr(adapter, "modality", "STANDARD")
 
         record = CameraRecord(
             camera_id=clean_id,

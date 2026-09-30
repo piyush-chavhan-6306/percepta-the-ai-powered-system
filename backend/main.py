@@ -13,6 +13,7 @@ if sys.platform == "win32":
 import cv2
 try:
     cv2.ocl.setUseOpenCL(False)
+    cv2.setNumThreads(1)  # Prevent OpenCV from spawning parallel threads per worker
 except Exception:
     pass
 
@@ -25,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from backend.api.alerts import router as alerts_router
-from backend.api.cameras import DEFAULT_DEMO_CLIP, resolve_video_path, router as cameras_router
+from backend.api.cameras import DEFAULT_DEMO_CLIP, bootstrap_demo_camera, resolve_video_path, router as cameras_router
 from backend.api.events import router as events_router
 from backend.api.export import router as export_router
 from backend.api.forensics import router as forensics_router
@@ -46,60 +47,9 @@ from backend.gateway.auth import router as auth_router
 from backend.gateway.middleware import GatewaySecurityMiddleware, log_gateway_startup_banner
 from backend.gateway.rate_limit import limiter, rate_limit_exceeded_handler
 from backend.ingestion.camera_manager import get_camera_manager
-from backend.ingestion.video_adapter import VideoFileAdapter
 from backend.tracking.live_worker import get_worker_registry
 
 logger = logging.getLogger(__name__)
-
-DEMO_CAMERA_ID = "CAM-01"
-
-
-async def bootstrap_demo_camera(autostart: bool = False) -> None:
-    """
-    Register default surveillance cameras in inventory in standby state.
-    Perception starts only when the operator explicitly starts analysis.
-    """
-    manager = get_camera_manager()
-    clip = resolve_video_path(DEFAULT_DEMO_CLIP)
-    if clip is None:
-        logger.warning(
-            f"Demo clip '{DEFAULT_DEMO_CLIP}' not found; skipping demo camera bootstrap. "
-            "Add a camera from the dashboard to begin."
-        )
-        return
-
-    configs = [
-        ("CAM-01", "Border Post Alpha (Optical CCTV)", "Sector 7 Perimeter", "STANDARD"),
-    ]
-
-    for cid, name, loc, mod in configs:
-        if manager.get_camera(cid) is not None:
-            continue
-        try:
-            adapter = VideoFileAdapter(
-                camera_id=cid,
-                video_path=clip,
-                loop=True,
-                modality=mod,
-            )
-            manager.register_camera(
-                camera_id=cid,
-                adapter=adapter,
-                name=name,
-                location_label=loc,
-                modality=mod,
-                source_type=SourceType.VIDEO_FILE,
-            )
-            if autostart:
-                if await manager.start_camera(cid):
-                    await get_worker_registry().start_worker(cid)
-                    logger.info(f"Multi-Modal Camera '{cid}' [{mod}] live on {clip}")
-                else:
-                    await manager.deregister_camera(cid)
-            else:
-                logger.info(f"Registered camera '{cid}' in STANDBY mode (ready for operator activation).")
-        except Exception as err:
-            logger.warning(f"Camera bootstrap failed for {cid}: {err}")
 
 
 @asynccontextmanager

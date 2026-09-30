@@ -23,6 +23,7 @@ class CreateZoneRequest(BaseModel):
     severity: str = "restricted"  # "info", "warning", "restricted", "critical"
     loitering_threshold_seconds: Optional[float] = 2.0
     loitering_debounce_seconds: float = 30.0
+    camera_id: Optional[str] = None
 
 
 class CreateBoundaryRequest(BaseModel):
@@ -33,6 +34,7 @@ class CreateBoundaryRequest(BaseModel):
     severity: str = "critical"
     direction: str = "BIDIRECTIONAL"  # "NORTH", "SOUTH", "EAST", "WEST", "BIDIRECTIONAL"
     debounce_seconds: float = 3.0
+    camera_id: Optional[str] = None
 
 
 class ZoneResponse(BaseModel):
@@ -42,6 +44,7 @@ class ZoneResponse(BaseModel):
     severity: str
     is_active: bool
     loitering_threshold_seconds: Optional[float] = None
+    camera_id: Optional[str] = None
 
 
 class BoundaryResponse(BaseModel):
@@ -52,6 +55,7 @@ class BoundaryResponse(BaseModel):
     severity: str
     direction: str = "BIDIRECTIONAL"
     is_active: bool
+    camera_id: Optional[str] = None
 
 
 class ZoneListResponse(BaseModel):
@@ -71,6 +75,7 @@ async def list_zones_and_boundaries() -> ZoneListResponse:
             severity=z.severity.value,
             is_active=z.is_active,
             loitering_threshold_seconds=z.loitering_threshold_seconds,
+            camera_id=z.camera_id,
         )
         for z in monitor.zones.values()
     ]
@@ -83,6 +88,7 @@ async def list_zones_and_boundaries() -> ZoneListResponse:
             severity=b.severity.value,
             direction=getattr(b, "direction", "BIDIRECTIONAL"),
             is_active=b.is_active,
+            camera_id=b.camera_id,
         )
         for b in monitor.boundaries.values()
     ]
@@ -102,6 +108,7 @@ async def create_security_zone(request: CreateZoneRequest) -> ZoneResponse:
         severity=sev,
         loitering_threshold_seconds=request.loitering_threshold_seconds,
         loitering_debounce_seconds=request.loitering_debounce_seconds,
+        camera_id=request.camera_id,
     )
     monitor.add_zone(zone)
     return ZoneResponse(
@@ -111,6 +118,7 @@ async def create_security_zone(request: CreateZoneRequest) -> ZoneResponse:
         severity=zone.severity.value,
         is_active=zone.is_active,
         loitering_threshold_seconds=zone.loitering_threshold_seconds,
+        camera_id=zone.camera_id,
     )
 
 
@@ -131,6 +139,7 @@ async def create_virtual_boundary(request: CreateBoundaryRequest) -> BoundaryRes
         severity=sev,
         direction=request.direction,
         debounce_seconds=request.debounce_seconds,
+        camera_id=request.camera_id,
     )
     monitor.add_boundary(boundary)
     return BoundaryResponse(
@@ -141,6 +150,7 @@ async def create_virtual_boundary(request: CreateBoundaryRequest) -> BoundaryRes
         severity=boundary.severity.value,
         direction=boundary.direction,
         is_active=boundary.is_active,
+        camera_id=boundary.camera_id,
     )
 
 

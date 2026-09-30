@@ -260,14 +260,31 @@ class CameraWorker:
 
         # Scale down 1080p+ display canvas to 720p for 10x faster JPEG compression (1.5ms vs 18ms)
         h, w = render_img.shape[:2]
+        render_tracks = tracks
         if w > 1280:
             target_w = 1280
             target_h = int(h * (1280.0 / w))
+            sx = target_w / float(w)
+            sy = target_h / float(h)
             render_img = cv2.resize(render_img, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+            import dataclasses
+            scaled_tracks = []
+            for t in tracks:
+                b = t.bounding_box
+                scaled_b = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] if b and len(b) >= 4 else b
+                scaled_tracks.append(
+                    dataclasses.replace(
+                        t,
+                        bounding_box=scaled_b,
+                        center_x=t.center_x * sx,
+                        center_y=t.center_y * sy,
+                    )
+                )
+            render_tracks = scaled_tracks
 
         annotated = annotate_frame(
             render_img,
-            tracks,
+            render_tracks,
             zones=list(self.zone_monitor.zones.values()),
             boundaries=list(self.zone_monitor.boundaries.values()),
             camera_id=self.camera_id,
@@ -404,43 +421,46 @@ class CameraWorker:
                 self._consecutive_read_failures = 0
                 frames_read += 1
 
-                # --- SYNCHRONIZED PERCEPTION & TRACKING ---
-                # Every frame is processed in lockstep so Frame N is rendered with Frame N's exact tracks.
-                # This completely eliminates the freeze-and-jump lag caused by desynchronized background inference.
-                inf_start = time.perf_counter()
-                loop = asyncio.get_running_loop()
-                res = await loop.run_in_executor(
-                    _inference_executor,
-                    self.pipeline.process_frame_sync,
-                    frame,
-                )
-                self._last_inference_ms = (time.perf_counter() - inf_start) * 1000.0
-                self._inference_fps_window_count += 1
-                elapsed = time.perf_counter() - self._inference_fps_window_start
-                if elapsed >= 1.0:
-                    self._inference_fps = self._inference_fps_window_count / elapsed
-                    self._inference_fps_window_count = 0
-                    self._inference_fps_window_start = time.perf_counter()
+                try:
+                    # --- SYNCHRONIZED PERCEPTION & TRACKING ---
+                    # Every frame is processed in lockstep so Frame N is rendered with Frame N's exact tracks.
+                    # This completely eliminates the freeze-and-jump lag caused by desynchronized background inference.
+                    inf_start = time.perf_counter()
+                    loop = asyncio.get_running_loop()
+                    res = await loop.run_in_executor(
+                        _inference_executor,
+                        self.pipeline.process_frame_sync,
+                        frame,
+                    )
+                    self._last_inference_ms = (time.perf_counter() - inf_start) * 1000.0
+                    self._inference_fps_window_count += 1
+                    elapsed = time.perf_counter() - self._inference_fps_window_start
+                    if elapsed >= 1.0:
+                        self._inference_fps = self._inference_fps_window_count / elapsed
+                        self._inference_fps_window_count = 0
+                        self._inference_fps_window_start = time.perf_counter()
 
-                current_tracks = res.tracks
-                if res.zone_events or res.alert_events or res.evidence_events:
-                    evs = list(res.zone_events) + list(res.alert_events) + list(res.evidence_events)
-                    task = asyncio.create_task(self._record_events_bg(evs))
-                    self._bg_tasks.add(task)
-                    task.add_done_callback(self._bg_tasks.discard)
+                    current_tracks = res.tracks
+                    if res.zone_events or res.alert_events or res.evidence_events:
+                        evs = list(res.zone_events) + list(res.alert_events) + list(res.evidence_events)
+                        task = asyncio.create_task(self._record_events_bg(evs))
+                        self._bg_tasks.add(task)
+                        task.add_done_callback(self._bg_tasks.discard)
 
-                # --- RENDER (synchronized with current frame perception) ---
-                render_start = time.perf_counter()
-                jpeg = await asyncio.to_thread(self._render, frame.image, current_tracks)
-                self._last_render_ms = (time.perf_counter() - render_start) * 1000.0
+                    # --- RENDER (synchronized with current frame perception) ---
+                    render_start = time.perf_counter()
+                    jpeg = await asyncio.to_thread(self._render, frame.image, current_tracks)
+                    self._last_render_ms = (time.perf_counter() - render_start) * 1000.0
 
-                if jpeg:
-                    self._last_jpeg = jpeg
-                    self._publish(jpeg, frame.frame_number, len(current_tracks))
-                    self._tick_fps()
+                    if jpeg:
+                        self._last_jpeg = jpeg
+                        self._publish(jpeg, frame.frame_number, len(latest_tracks))
+                        self._tick_fps()
 
-                # Update pipeline stride controller overhead
-                self.pipeline.set_frame_overhead_ms(self._last_read_ms + self._last_render_ms)
+                    # Update pipeline stride controller overhead
+                    self.pipeline.set_frame_overhead_ms(self._last_read_ms + self._last_render_ms)
+                except Exception as cycle_err:
+                    logger.error(f"Perception frame cycle error for {self.camera_id}: {cycle_err}", exc_info=True)
 
                 # --- Pacing: match source FPS ---
                 next_deadline += frame_interval

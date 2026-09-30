@@ -222,8 +222,6 @@ export function AlertInspector({
 
       if (data.media_type === "video" && data.media_url) {
         const target = data.timeline_offset_sec ?? getTargetSec(0);
-        const seekPayload = data.timeline_offset_sec != null ? data.timeline_offset_sec : alert.timestamp;
-        onSeekTime(seekPayload, data.camera_id || alert.camera_id);
 
         if (inspectorVideoRef.current && inspectorVideoRef.current.readyState >= 1) {
           const duration = inspectorVideoRef.current.duration || Infinity;

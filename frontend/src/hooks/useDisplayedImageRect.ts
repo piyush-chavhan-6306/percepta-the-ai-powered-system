@@ -115,9 +115,19 @@ export function useDisplayedImageRect(
     observer.observe(img);
     window.addEventListener("resize", remeasure);
 
+    // Polling fallback: MJPEG streams may not fire onLoad until closed.
+    // If the image gets a naturalWidth but ResizeObserver doesn't catch it,
+    // we need to poll until we get a valid size.
+    const pollInterval = setInterval(() => {
+      if (img.naturalWidth > 0) {
+        remeasure();
+      }
+    }, 500);
+
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", remeasure);
+      clearInterval(pollInterval);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [imgRef, remeasure]);

@@ -324,6 +324,7 @@ class ApiClient {
     polygon: [number, number][] | number[][];
     severity: string;
     loitering_threshold_seconds?: number;
+    camera_id?: string;
   }) {
     const payload = {
       ...data,
@@ -343,6 +344,7 @@ class ApiClient {
     severity: string;
     direction?: string;
     debounce_seconds?: number;
+    camera_id?: string;
   }) {
     const payload = {
       ...data,

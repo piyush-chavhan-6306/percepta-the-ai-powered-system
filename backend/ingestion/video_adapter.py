@@ -81,23 +81,45 @@ class VideoFileAdapter(SensorAdapter):
                     self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = self._cap.read()
                     if not ret or frame is None:
-                        self._is_running = False
-                        return None
+                        # Re-open capture cleanly if setting position to 0 failed
+                        try:
+                            self._cap.release()
+                            self._cap = cv2.VideoCapture(str(self.video_path))
+                            ret, frame = self._cap.read()
+                        except Exception:
+                            ret, frame = False, None
+                        if not ret or frame is None:
+                            self._is_running = False
+                            return None
                 else:
                     self._is_running = False
                     return None
 
+            # For 50-60 FPS videos, skip alternate frame to feed at smooth ~25-30 FPS real-time rate
+            if self._native_fps >= 50.0:
+                self._cap.grab()
+                self._frame_count += 1
+
         self._frame_count += 1
         now = datetime.now(timezone.utc)
+
+        # Scale down 1080p+ videos to standard 1280x720 surveillance resolution
+        out_w = self._width
+        out_h = self._height
+        if frame is not None and frame.shape[1] > 1280:
+            scale = 1280.0 / frame.shape[1]
+            out_h = int(frame.shape[0] * scale)
+            out_w = 1280
+            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
         frame_data = FrameData(
             camera_id=self.camera_id,
             frame_number=self._frame_count,
             timestamp=now,
             image=frame,
-            width=self._width,
-            height=self._height,
-            fps=self.target_fps or self._native_fps,
+            width=out_w,
+            height=out_h,
+            fps=min(30.0, float(self.target_fps or self._native_fps)),
             source=self.source,
         )
 

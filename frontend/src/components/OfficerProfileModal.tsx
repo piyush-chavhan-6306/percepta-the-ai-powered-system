@@ -40,7 +40,7 @@ const DEFAULT_PROFILE: OfficerProfileData = {
   regimentUnit: "14th Border Surveillance Battalion",
   division: "Northern Border Command / Forward Sector",
   organization: "Ministry of Home Affairs / ITBP",
-  clearanceLevel: "LEVEL-4 (TOP SECRET // C2 SECURE)",
+  clearanceLevel: "LEVEL-4 (TOP SECRET // COMMAND SECURE)",
   serviceId: "PERC-SEC-94021",
 };
 

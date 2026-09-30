@@ -39,6 +39,7 @@ interface CameraFeedProps {
   onToggleRun?: () => void;
   onExitSeek?: () => void;
   onZoneCreated?: () => void;
+  onFeedClick?: () => void;
 }
 
 type DrawMode = "none" | "polygon" | "tripwire";
@@ -54,6 +55,7 @@ export function CameraFeed({
   onToggleRun,
   onExitSeek,
   onZoneCreated,
+  onFeedClick,
 }: CameraFeedProps) {
   const [activeModality, setActiveModality] = useState<string>(modality);
   const [sessionNonce, setSessionNonce] = useState<number>(Date.now());
@@ -211,8 +213,8 @@ export function CameraFeed({
   const fetchZones = async () => {
     try {
       const res = await api.getZones();
-      setZones(res.zones || []);
-      setBoundaries(res.boundaries || []);
+      setZones(res.zones?.filter((z: any) => !z.camera_id || z.camera_id === cameraId) || []);
+      setBoundaries(res.boundaries?.filter((b: any) => !b.camera_id || b.camera_id === cameraId) || []);
     } catch (err) {
       console.error("Failed to fetch zones:", err);
     }
@@ -259,7 +261,13 @@ export function CameraFeed({
   }, [isDrawing, canSave, points, zoneName, severity, drawMode]);
 
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (!isDrawing || !rect) return;
+    if (!isDrawing) {
+      if (isCompact && onFeedClick) {
+        onFeedClick();
+      }
+      return;
+    }
+    if (!rect) return;
     const pt = clickToFrameCoords(e.clientX, e.clientY, rect);
     if (!pt) return;
 
@@ -287,6 +295,7 @@ export function CameraFeed({
           name,
           polygon: points,
           severity,
+          camera_id: cameraId,
         });
       } else if (drawMode === "tripwire" && points.length >= 2) {
         await api.createBoundary({
@@ -295,6 +304,7 @@ export function CameraFeed({
           pt2: points[1],
           severity,
           direction: tripwireDirection,
+          camera_id: cameraId,
         });
       }
       cancelDraw();
@@ -613,9 +623,12 @@ export function CameraFeed({
         onClick={handleClick}
         onMouseMove={handleMouseMove}
         className={`flex-1 relative z-10 bg-black flex items-center justify-center overflow-hidden ${
-          isDrawing ? "cursor-crosshair" : "cursor-default"
-        }`}
+          isDrawing ? "cursor-crosshair" : isCompact ? "cursor-pointer" : "cursor-default"
+        } group`}
       >
+        {isCompact && (
+          <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors z-30 pointer-events-none" />
+        )}
         {isSeekMode ? (
           <video
             ref={videoRef}
@@ -713,7 +726,11 @@ export function CameraFeed({
             {!isDrawing && zones.map((z) => {
               const isSel = selectedTriggerId === z.zone_id;
               const ptsStr = z.polygon
-                .map((p) => `${p[0] * rect.frameWidth},${p[1] * rect.frameHeight}`)
+                .map((p) => {
+                  const x = p[0] <= 1.0 ? p[0] * rect.frameWidth : p[0];
+                  const y = p[1] <= 1.0 ? p[1] * rect.frameHeight : p[1];
+                  return `${x},${y}`;
+                })
                 .join(" ");
               return (
                 <g
@@ -727,23 +744,27 @@ export function CameraFeed({
                 >
                   <polygon
                     points={ptsStr}
-                    fill={isSel ? "rgba(0, 229, 255, 0.35)" : "rgba(0, 229, 255, 0.08)"}
-                    stroke={isSel ? "#00E5FF" : "rgba(0, 229, 255, 0.6)"}
+                    fill={isSel ? "rgba(239, 68, 68, 0.35)" : "rgba(239, 68, 68, 0.08)"}
+                    stroke={isSel ? "#EF4444" : "rgba(239, 68, 68, 0.6)"}
                     strokeWidth={isSel ? "5" : "2"}
                     strokeDasharray={isSel ? "8,4" : "none"}
-                    style={{ filter: isSel ? "drop-shadow(0 0 10px rgba(0,229,255,0.9))" : "none" }}
+                    style={{ filter: isSel ? "drop-shadow(0 0 10px rgba(239,68,68,0.9))" : "none" }}
                   />
-                  {isSel && z.polygon.map((p, pIdx) => (
-                    <circle
-                      key={pIdx}
-                      cx={p[0] * rect.frameWidth}
-                      cy={p[1] * rect.frameHeight}
-                      r="7"
-                      fill="#00E5FF"
-                      stroke="#FFFFFF"
-                      strokeWidth="2"
-                    />
-                  ))}
+                  {isSel && z.polygon.map((p, pIdx) => {
+                    const cx = p[0] <= 1.0 ? p[0] * rect.frameWidth : p[0];
+                    const cy = p[1] <= 1.0 ? p[1] * rect.frameHeight : p[1];
+                    return (
+                      <circle
+                        key={pIdx}
+                        cx={cx}
+                        cy={cy}
+                        r="7"
+                        fill="#EF4444"
+                        stroke="#FFFFFF"
+                        strokeWidth="2"
+                      />
+                    );
+                  })}
                 </g>
               );
             })}
@@ -751,10 +772,12 @@ export function CameraFeed({
             {/* Existing Saved Tripwires (Click to Select / Highlight) */}
             {!isDrawing && boundaries.map((b) => {
               const isSel = selectedTriggerId === b.boundary_id;
-              const x1 = b.pt1[0] * rect.frameWidth;
-              const y1 = b.pt1[1] * rect.frameHeight;
-              const x2 = b.pt2[0] * rect.frameWidth;
-              const y2 = b.pt2[1] * rect.frameHeight;
+              const x1 = b.pt1[0] <= 1.0 ? b.pt1[0] * rect.frameWidth : b.pt1[0];
+              const y1 = b.pt1[1] <= 1.0 ? b.pt1[1] * rect.frameHeight : b.pt1[1];
+              const x2 = b.pt2[0] <= 1.0 ? b.pt2[0] * rect.frameWidth : b.pt2[0];
+              const y2 = b.pt2[1] <= 1.0 ? b.pt2[1] * rect.frameHeight : b.pt2[1];
+              const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
               return (
                 <g
                   key={b.boundary_id}
@@ -770,17 +793,34 @@ export function CameraFeed({
                     y1={y1}
                     x2={x2}
                     y2={y2}
-                    stroke={isSel ? "#F59E0B" : "rgba(245, 158, 11, 0.7)"}
+                    stroke={isSel ? "#EF4444" : "rgba(239, 68, 68, 0.7)"}
                     strokeWidth={isSel ? "6" : "3"}
                     strokeDasharray={isSel ? "10,5" : "none"}
-                    style={{ filter: isSel ? "drop-shadow(0 0 12px rgba(245,158,11,0.95))" : "none" }}
+                    style={{ filter: isSel ? "drop-shadow(0 0 12px rgba(239,68,68,0.95))" : "none" }}
                   />
-                  {isSel && (
-                    <>
-                      <circle cx={x1} cy={y1} r="8" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="2" />
-                      <circle cx={x2} cy={y2} r="8" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="2" />
-                    </>
-                  )}
+                  <circle cx={x1} cy={y1} r="7" fill="#EF4444" stroke="#FFFFFF" strokeWidth="2" />
+                  <circle cx={x2} cy={y2} r="7" fill="#EF4444" stroke="#FFFFFF" strokeWidth="2" />
+                  <rect
+                    x={midX - 45}
+                    y={midY - 12}
+                    width="90"
+                    height="20"
+                    rx="4"
+                    fill="rgba(10, 15, 25, 0.85)"
+                    stroke={isSel ? "#EF4444" : "rgba(239, 68, 68, 0.5)"}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={midX}
+                    y={midY + 2}
+                    textAnchor="middle"
+                    fill="#EF4444"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    {b.name || "TRIPWIRE"}
+                  </text>
                 </g>
               );
             })}
@@ -790,13 +830,13 @@ export function CameraFeed({
               <>
                 <polygon
                   points={[...points, ...(cursor ? [cursor] : [])].map((p) => `${p[0]},${p[1]}`).join(" ")}
-                  fill="rgba(0, 229, 255, 0.2)"
-                  stroke="#00e5ff"
+                  fill="rgba(239, 68, 68, 0.2)"
+                  stroke="#EF4444"
                   strokeWidth="3"
                   strokeDasharray="6 3"
                 />
                 {points.map((p, idx) => (
-                  <circle key={idx} cx={p[0]} cy={p[1]} r="6" fill="#00e5ff" stroke="#ffffff" strokeWidth="2" />
+                  <circle key={idx} cx={p[0]} cy={p[1]} r="6" fill="#EF4444" stroke="#ffffff" strokeWidth="2" />
                 ))}
               </>
             )}
@@ -810,7 +850,7 @@ export function CameraFeed({
                     y1={points[0][1]}
                     x2={cursor[0]}
                     y2={cursor[1]}
-                    stroke="#ffab00"
+                    stroke="#EF4444"
                     strokeWidth="4"
                     strokeDasharray="8 4"
                   />
@@ -821,22 +861,22 @@ export function CameraFeed({
                     y1={points[0][1]}
                     x2={points[1][0]}
                     y2={points[1][1]}
-                    stroke="#ffab00"
+                    stroke="#EF4444"
                     strokeWidth="4"
                   />
                 )}
                 {points.map((p, idx) => (
-                  <circle key={idx} cx={p[0]} cy={p[1]} r="7" fill="#ffab00" stroke="#ffffff" strokeWidth="2" />
+                  <circle key={idx} cx={p[0]} cy={p[1]} r="7" fill="#EF4444" stroke="#ffffff" strokeWidth="2" />
                 ))}
               </>
             )}
 
             {/* Real-time Cursor Indicator for Precise Plotting */}
             {isDrawing && cursor && (
-              <g>
-                <circle cx={cursor[0]} cy={cursor[1]} r="5" fill="#ffffff" stroke="#00e5ff" strokeWidth="2" />
-                <line x1={cursor[0] - 10} y1={cursor[1]} x2={cursor[0] + 10} y2={cursor[1]} stroke="#00e5ff" strokeWidth="1.5" />
-                <line x1={cursor[0]} y1={cursor[1] - 10} x2={cursor[0]} y2={cursor[1] + 10} stroke="#00e5ff" strokeWidth="1.5" />
+              <g style={{ pointerEvents: "none" }}>
+                <circle cx={cursor[0]} cy={cursor[1]} r="5" fill="#ffffff" stroke="#EF4444" strokeWidth="2" />
+                <line x1={cursor[0] - 10} y1={cursor[1]} x2={cursor[0] + 10} y2={cursor[1]} stroke="#EF4444" strokeWidth="1.5" />
+                <line x1={cursor[0]} y1={cursor[1] - 10} x2={cursor[0]} y2={cursor[1] + 10} stroke="#EF4444" strokeWidth="1.5" />
               </g>
             )}
           </svg>

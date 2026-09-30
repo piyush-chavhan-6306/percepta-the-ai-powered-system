@@ -161,7 +161,11 @@ export function AlertPanel({ selectedCameraId, onSelectAlert, selectedAlertId, o
     }
   };
 
-  useEffect(() => { fetchData(); }, [view, selectedCameraId]);
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 3000);
+    return () => clearInterval(interval);
+  }, [view, selectedCameraId]);
 
   // Live WebSocket — INCIDENT, ALERT & ACKNOWLEDGEMENT events update the feed
   useWebSocket((msg: WsMessage) => {

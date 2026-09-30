@@ -159,6 +159,48 @@ class ThreatEngine:
             if "protected" in msg or "checkpoint" in msg:
                 has_protected = True
 
+        # Ingest active incidents from IncidentEngine
+        max_incident_score = 0.0
+        try:
+            from backend.incidents.engine import get_incident_engine
+            active_incidents = get_incident_engine().get_active_incidents()
+            if camera_id:
+                active_incidents = [inc for inc in active_incidents if inc.camera_id == camera_id]
+            for inc in active_incidents:
+                if inc.severity in ("CRITICAL", "HIGH") or inc.rule_type in ("boundary_crossed", "tripwire_breach"):
+                    has_tripwire = True
+                    critical_count += 1
+                if inc.severity in ("RESTRICTED", "WARNING") or inc.rule_type == "zone_intrusion":
+                    has_restricted = True
+                    restricted_count += 1
+                if inc.rule_type == "loitering":
+                    has_loiter = True
+                    loiter_count += 1
+                for tid in (inc.associated_track_ids or [inc.primary_track_id]):
+                    if tid:
+                        active_track_ids.add(str(tid))
+                if inc.threat_score:
+                    max_incident_score = max(max_incident_score, float(inc.threat_score))
+        except Exception:
+            pass
+
+        # Ingest live tracks directly from perception workers
+        try:
+            from backend.tracking.live_worker import get_worker_registry
+            registry = get_worker_registry()
+            if camera_id:
+                w = registry.get_worker(camera_id)
+                if w and hasattr(w, "pipeline") and hasattr(w.pipeline, "_last_tracks"):
+                    for t in w.pipeline._last_tracks:
+                        active_track_ids.add(str(t.track_id))
+            else:
+                for w in registry.list_workers():
+                    if w and hasattr(w, "pipeline") and hasattr(w.pipeline, "_last_tracks"):
+                        for t in w.pipeline._last_tracks:
+                            active_track_ids.add(f"{w.camera_id}:{t.track_id}")
+        except Exception:
+            pass
+
         for e in recent_events:
             tid = e.get("track_id")
             if tid:
@@ -179,14 +221,15 @@ class ThreatEngine:
 
         has_multiple = len(active_track_ids) > 1 and (has_restricted or has_tripwire)
 
-        raw_score = (
+        computed_score = (
             (critical_count * 30.0)
             + (restricted_count * 35.0)
             + (loiter_count * 20.0)
-            + (15.0 if has_night else 0.0)
+            + (15.0 if has_night and (has_restricted or has_tripwire) else 0.0)
             + (15.0 if has_protected else 0.0)
             + (10.0 if has_multiple else 0.0)
         )
+        raw_score = max(computed_score, max_incident_score)
         score = min(100.0, max(0.0, raw_score))
 
         if score >= 60.0:

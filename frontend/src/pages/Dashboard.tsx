@@ -3,8 +3,8 @@ import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PerceptaLogo } from "@/features/shared/components/PerceptaLogo";
 import {
-  Shield,
   Plus,
   Video,
   Moon,
@@ -28,6 +28,7 @@ import { StatusBar } from "@/components/StatusBar";
 import { OfficerProfileModal } from "@/components/OfficerProfileModal";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { api } from "@/api/client";
+import { useWebSocket, type WsMessage } from "@/hooks/useWebSocket";
 import type { AlertItem, CameraRecord } from "@/types/surveillance";
 
 export default function Dashboard() {
@@ -38,6 +39,7 @@ export default function Dashboard() {
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showTour, setShowTour] = useState<boolean>(false);
   const [activeUserId, setActiveUserId] = useState<string>("usr_operator");
+  const [activeAlertCount, setActiveAlertCount] = useState<number>(0);
   const [threatData, setThreatData] = useState<{ score: number; level: string }>({
     score: 0,
     level: "NORMAL",
@@ -98,23 +100,49 @@ export default function Dashboard() {
       const rawLevel = String((res as any).threat_level || (res as any).level || "NORMAL").toUpperCase();
       let normLevel = "NORMAL";
       if (rawLevel === "DEFCON_RED" || rawLevel === "CRITICAL" || rawLevel === "RED") normLevel = "CRITICAL";
-      else if (rawLevel === "DEFCON_ORANGE" || rawLevel === "HIGH" || rawLevel === "ORANGE") normLevel = "HIGH";
+      else if (rawLevel === "DEFCON_ORANGE" || rawLevel === "RESTRICTED" || rawLevel === "HIGH" || rawLevel === "ORANGE") normLevel = "RESTRICTED";
       else if (rawLevel === "DEFCON_YELLOW" || rawLevel === "ELEVATED" || rawLevel === "MODERATE" || rawLevel === "YELLOW") normLevel = "ELEVATED";
       else normLevel = "NORMAL";
 
+      const score = Math.round(Number((res as any).threat_score ?? (res as any).score ?? 0));
       setThreatData({
-        score: (res as any).threat_score ?? (res as any).score ?? 0,
+        score,
         level: normLevel,
       });
+
+      // Synchronize active incident count for live status bar
+      try {
+        const incRes = await api.getIncidents({ camera_id: selectedCameraId, status: "ACTIVE", limit: 50 });
+        if (incRes?.incidents) {
+          setActiveAlertCount(incRes.incidents.length);
+        }
+      } catch {}
     } catch (err) {
       console.error("Failed to fetch threat level:", err);
     }
   }, [selectedCameraId]);
 
+  // Real-time WebSocket triggers instantaneous threat recalculation
+  useWebSocket((msg: WsMessage) => {
+    const et = (msg.event_type || (msg as any).type) as string;
+    if (
+      et === "ALERT" ||
+      et === "alert" ||
+      et === "INCIDENT" ||
+      et === "incident" ||
+      et === "ZONE" ||
+      et === "zone" ||
+      et === "RISK" ||
+      et === "SYSTEM"
+    ) {
+      fetchThreatLevel();
+    }
+  });
+
   useEffect(() => {
     fetchCameras();
     fetchThreatLevel();
-    const interval = setInterval(fetchThreatLevel, 10000);
+    const interval = setInterval(fetchThreatLevel, 3000);
     return () => clearInterval(interval);
   }, [fetchCameras, fetchThreatLevel]);
 
@@ -194,31 +222,12 @@ export default function Dashboard() {
 
               <div className="h-5 w-px bg-white/10" />
 
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <Shield className="w-4.5 h-4.5 text-primary" />
-                  </div>
-                  {/* Pulsing ring around shield */}
-                  <motion.div
-                    className="absolute inset-[-3px] rounded-xl border border-primary/30"
-                    animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.02, 1] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-sm font-bold tracking-wider font-mono text-foreground uppercase">
-                      PERCEPTA DEFENSE C2
-                    </h1>
-                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-mono border-white/5">
-                      SIH26187
-                    </Badge>
-                  </div>
-                  <p className="text-[10px] font-mono text-muted-foreground/60">
-                    Autonomous AI Border Surveillance Command
-                  </p>
-                </div>
+              <div
+                onClick={() => navigate("/")}
+                className="cursor-pointer flex items-center transition-opacity hover:opacity-90"
+                title="Return to Recon Portal"
+              >
+                <PerceptaLogo size={30} showText={true} />
               </div>
             </div>
 
@@ -464,6 +473,11 @@ export default function Dashboard() {
                             onToggleRun={() => handleToggleRunCamera(cam.camera_id)}
                             onExitSeek={handleExitSeek}
                             onZoneCreated={fetchCameras}
+                            onFeedClick={() => {
+                              setSelectedCameraId(cam.camera_id);
+                              setSelectedAlertTime(null);
+                              setGridLayout("1x1");
+                            }}
                           />
                         </div>
                       );
@@ -515,6 +529,11 @@ export default function Dashboard() {
                             onToggleRun={() => handleToggleRunCamera(cam.camera_id)}
                             onExitSeek={handleExitSeek}
                             onZoneCreated={fetchCameras}
+                            onFeedClick={() => {
+                              setSelectedCameraId(cam.camera_id);
+                              setSelectedAlertTime(null);
+                              setGridLayout("1x1");
+                            }}
                           />
                         </div>
                       );
@@ -566,7 +585,7 @@ export default function Dashboard() {
       {/* ═══ STATUS BAR ═══ */}
       <StatusBar
         cameraCount={cameras.length}
-        alertCount={0}
+        alertCount={activeAlertCount}
         threatLevel={threatData.level}
       />
 

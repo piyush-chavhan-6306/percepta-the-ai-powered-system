@@ -15,7 +15,8 @@ import numpy as np
 
 # Dedicated background thread pool for disk I/O and SHA-256 calculation
 # Prevents disk writes from blocking real-time perception loop
-_evidence_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="evidence")
+# Set to 4 workers to allow faster concurrent snapshot saving (CPU intensive tasks bypassed)
+_evidence_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="evidence")
 
 from backend.detection.detector import DetectionResult, ObjectDetector, get_detector
 from backend.events.schema import (
@@ -424,24 +425,28 @@ class TrackingPipeline:
 
                     # Optical face detection — evaluated ONLY when cooldown window permits
                     if cooldown_mgr.can_capture(frame.camera_id, trk.track_id, EvidenceType.FACE):
-                        face_res = face_pipeline.analyze_face(
-                            image=frame.image,
-                            person_bbox=trk.bounding_box,
-                            camera_id=str(frame.camera_id),
-                            track_id=trk.track_id,
+                        cooldown_mgr.record_capture(frame.camera_id, trk.track_id, EvidenceType.FACE)
+                        def _bg_face(f_img, f_bbox, c_id, t_id, f_num):
+                            try:
+                                face_res = face_pipeline.analyze_face(
+                                    image=f_img, person_bbox=f_bbox, camera_id=c_id, track_id=t_id
+                                )
+                                if face_res is not None and face_res.face_detected and face_res.face_bbox:
+                                    snap_mgr.save_crop_evidence(
+                                        image=f_img,
+                                        bbox=face_res.face_bbox,
+                                        evidence_type=EvidenceType.FACE,
+                                        camera_id=c_id,
+                                        track_id=t_id,
+                                        frame_number=f_num,
+                                        trigger_reason="FACE_DETECTED",
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Face bg err: {e}")
+
+                        _evidence_pool.submit(
+                            _bg_face, frame.image.copy(), trk.bounding_box, str(frame.camera_id), trk.track_id, frame.frame_number
                         )
-                        if face_res is not None and face_res.face_detected and face_res.face_bbox:
-                            cooldown_mgr.record_capture(frame.camera_id, trk.track_id, EvidenceType.FACE)
-                            _evidence_pool.submit(
-                                snap_mgr.save_crop_evidence,
-                                image=frame.image.copy(),
-                                bbox=face_res.face_bbox,
-                                evidence_type=EvidenceType.FACE,
-                                camera_id=str(frame.camera_id),
-                                track_id=trk.track_id,
-                                frame_number=frame.frame_number,
-                                trigger_reason="FACE_DETECTED",
-                            )
 
                 # --- 3. VEHICLE / ANPR EVIDENCE (Cooldown gated, async disk write) ---
                 elif anpr_processor.is_vehicle(trk.object_class):
@@ -460,25 +465,28 @@ class TrackingPipeline:
 
                     # License plate localization & OCR — evaluated ONLY when cooldown window permits
                     if cooldown_mgr.can_capture(frame.camera_id, trk.track_id, EvidenceType.ANPR):
-                        anpr_res = anpr_processor.process_vehicle(
-                            frame=frame.image,
-                            bounding_box=trk.bounding_box,
-                            object_class=trk.object_class,
-                            camera_id=str(frame.camera_id),
-                            vehicle_id=str(trk.track_id),
+                        cooldown_mgr.record_capture(frame.camera_id, trk.track_id, EvidenceType.ANPR)
+                        def _bg_anpr(f_img, t_bbox, t_cls, c_id, t_id, f_num):
+                            try:
+                                anpr_res = anpr_processor.process_vehicle(
+                                    frame=f_img, bounding_box=t_bbox, object_class=t_cls, camera_id=c_id, vehicle_id=str(t_id)
+                                )
+                                if anpr_res is not None and anpr_res.plate_bounding_box:
+                                    snap_mgr.save_crop_evidence(
+                                        image=f_img,
+                                        bbox=anpr_res.plate_bounding_box,
+                                        evidence_type=EvidenceType.ANPR,
+                                        camera_id=c_id,
+                                        track_id=t_id,
+                                        frame_number=f_num,
+                                        trigger_reason="ANPR_PLATE_LOCALIZED",
+                                    )
+                            except Exception as e:
+                                logger.warning(f"ANPR bg err: {e}")
+
+                        _evidence_pool.submit(
+                            _bg_anpr, frame.image.copy(), trk.bounding_box, trk.object_class, str(frame.camera_id), trk.track_id, frame.frame_number
                         )
-                        if anpr_res is not None and anpr_res.plate_bounding_box:
-                            cooldown_mgr.record_capture(frame.camera_id, trk.track_id, EvidenceType.ANPR)
-                            _evidence_pool.submit(
-                                snap_mgr.save_crop_evidence,
-                                image=frame.image.copy(),
-                                bbox=anpr_res.plate_bounding_box,
-                                evidence_type=EvidenceType.ANPR,
-                                camera_id=str(frame.camera_id),
-                                track_id=trk.track_id,
-                                frame_number=frame.frame_number,
-                                trigger_reason="ANPR_PLATE_LOCALIZED",
-                            )
             except Exception as trk_err:
                 logger.warning(f"Error evaluating track evidence for track {trk.track_id}: {trk_err}")
 
